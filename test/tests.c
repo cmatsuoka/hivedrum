@@ -999,8 +999,8 @@ static int command_snare_noise(h5_context ctx)
     return 0;
 }
 
-static int16_t *render_snare_variant(int32_t click, int32_t sweep,
-    size_t frames)
+static int16_t *render_snare_variant(int32_t noise_tone, int32_t click,
+    int32_t sweep, size_t frames)
 {
     h5_context ctx = h5_create_context(TEST_RATE);
     int16_t *buffer;
@@ -1009,7 +1009,7 @@ static int16_t *render_snare_variant(int32_t click, int32_t sweep,
         return 0;
     }
     h5_reset(ctx);
-    set_snare(ctx, H5_PARAM_NOISE_TONE, H5_Q16_ONE);
+    set_snare(ctx, H5_PARAM_NOISE_TONE, noise_tone);
     set_snare(ctx, H5_PARAM_BEND, 0);
     set_snare(ctx, H5_PARAM_DECAY, H5_Q16_ONE);
     set_snare(ctx, H5_PARAM_CLICK_TONE, click);
@@ -1027,8 +1027,9 @@ static int command_snare_controls(void)
     int16_t *a;
     int16_t *b;
 
-    a = render_snare_variant(0, H5_Q16_ONE / 2, frames);
-    b = render_snare_variant(H5_Q16_ONE, H5_Q16_ONE / 2, frames);
+    a = render_snare_variant(H5_Q16_ONE, 0, H5_Q16_ONE / 2, frames);
+    b = render_snare_variant(H5_Q16_ONE, H5_Q16_ONE, H5_Q16_ONE / 2,
+        frames);
     if (a == 0 || b == 0) {
         fail("out of memory");
         free(a);
@@ -1043,8 +1044,8 @@ static int command_snare_controls(void)
     free(a);
     free(b);
 
-    a = render_snare_variant(0, 0, frames);
-    b = render_snare_variant(0, H5_Q16_ONE, frames);
+    a = render_snare_variant(0, 0, 0, frames);
+    b = render_snare_variant(0, 0, H5_Q16_ONE, frames);
     if (a == 0 || b == 0) {
         fail("out of memory");
         free(a);

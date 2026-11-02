@@ -322,9 +322,10 @@ struct h5_snare_s {
     struct h5_env_s env_click; /* transient AR^10: 1 ms attack,
                                 * 0.2*Decay+0.1 s release */
     struct h5_noise_s noise;
-    struct h5_svf_s rattle[3];  /* three fixed band-pass resonators */
+    struct h5_svf_s rattle[4];  /* four fixed band-pass resonators */
     struct h5_svf_s out_filter; /* output low-pass; base cutoff NoisePitch */
     struct h5_sweep_s out_sweep; /* swept coefficients for out_filter */
+    struct h5_svf_s hp_filter;  /* output high-pass after the low-pass */
     struct h5_pitch_curve_s pitch_curve;
     struct h5_pf_s pf;
     uint32_t phase;            /* 28-bit tone oscillator phase */

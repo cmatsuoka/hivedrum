@@ -1,9 +1,9 @@
-# Hive-V
+# Libhive
 
-Hive-V (pronounced "hive five") is a small, dependency-free C library that
-synthesizes a five-voice percussion kit: Kick, Snare and three Toms. It
-renders a stereo mix into a caller-supplied buffer and performs no I/O. All
-DSP is integer fixed-point; the library contains no floating-point code.
+Libhive is a small, dependency-free C library that synthesizes a five-voice
+percussion kit: Kick, Snare and three Toms. It renders a stereo mix into a
+caller-supplied buffer and performs no I/O. All DSP is integer fixed-point,
+the library contains no floating-point code.
 
 ## Features
 

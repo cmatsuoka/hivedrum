@@ -345,10 +345,10 @@ static int command_api(void)
         fail("h5_param_supported() wrongly reports Snare Sweep unsupported");
     } else if (h5_get_param((h5_context)ctx, H5_VOICE_SNARE,
             H5_PARAM_SWEEP, &value) != H5_OK ||
-        value != 31 * H5_Q16_ONE / 50) {
-        fail("Snare Sweep does not default to 0.62");
+        value != (47 * H5_Q16_ONE + 50) / 100) {
+        fail("Snare Sweep does not default to 0.47");
     } else {
-        ok("Snare Sweep is supported with the default 0.62");
+        ok("Snare Sweep is supported with the default 0.47");
     }
     if (h5_param_supported(H5_VOICE_COUNT, H5_PARAM_DECAY) ||
         h5_param_supported(H5_VOICE_KICK, H5_PARAM_COUNT)) {

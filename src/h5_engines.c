@@ -119,10 +119,11 @@
 #define H5_SNARE_DRIVE_H3_Q16 (4000)  /* 0.061 */
 
 /* The drive harmonics add to the peak of the tone core, so the core is
- * scaled down to leave room and the tone gain carries the matching boost.
+ * scaled down to leave headroom. The tone gain recovers most of that
+ * headroom while keeping the shell tone slightly behind the rattle.
  * Without this the core would clip on every hit. */
 #define H5_SNARE_DRIVE_HEADROOM_Q16 (58368) /* 0.891 */
-#define H5_SNARE_TONE_BOOST_Q16 (55705)    /* 0.850 */
+#define H5_SNARE_TONE_BOOST_Q16 (49152)    /* 0.750 */
 
 /* Rattle bank: the wire noise is broadband with four resonances. The
  * measured engine spectrum shows a wire body near 755 Hz, a strong narrow

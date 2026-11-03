@@ -42,6 +42,14 @@
  * exposed parameters. Each trigger restarts the oscillator phase, the
  * envelopes and the filters; the noise generator free-runs.
  *
+ *   - Strike level: every hit carries a strike level, taken from the MIDI
+ *     velocity. It scales the level of the whole mix, the depth of the
+ *     pitch envelope (0.8 + 0.2*g^4 of the Bend setting), the noise
+ *     cutoff sweep (2000*g^4 Hz) and the weight of the transient
+ *     (0.3 + 0.7*g^4 on the Kick, 0.4 + 0.6*g^4 on the Snare and the
+ *     Tom), with g the strike level. The pitch curve and the swept-filter
+ *     coefficients depend on it, so they are rebuilt at every trigger.
+ *
  * The three engines share the parts of the per-sample chain that are
  * identical: the oscillator, the triangle, the transient burst, the body
  * mix and the output stage live in the shared helpers below. What stays
@@ -62,8 +70,20 @@
 #define H5_PF_LO_HZ (50 * H5_Q16_ONE)
 #define H5_PF_HI_HZ (20000 * H5_Q16_ONE)
 
-/* Cutoff sweep contribution at env = 1, Hz in Q16. */
+/* Cutoff sweep contribution at env = 1, Hz in Q16. The engine sweeps the
+ * noise cutoff by 2000*gain^4 Hz, so the amount scales with the fourth
+ * power of the strike level. */
 #define H5_NOISE_SWEEP_Q16 (2000 * H5_Q16_ONE)
+
+/* The velocity laws. The strike level g (0..1) is raised to the fourth
+ * power; the pitch envelope then sweeps 0.8 + 0.2*g^4 of the Bend setting,
+ * so a soft strike bends 20 % less than a hard one, and the noise cutoff
+ * sweeps by 2000*g^4 Hz. The transient weight is floor + (1-floor)*g^4,
+ * with a floor of 0.3 for the Kick and 0.4 for the Snare and the Tom. */
+#define H5_VEL_DEPTH_BASE_Q16 (8 * H5_Q16_ONE / 10)   /* 0.8 */
+#define H5_VEL_DEPTH_GAIN_Q16 (2 * H5_Q16_ONE / 10)   /* 0.2 */
+#define H5_KICK_CLICK_FLOOR_Q16 (3 * H5_Q16_ONE / 10)  /* 0.3 */
+#define H5_STD_CLICK_FLOOR_Q16 (4 * H5_Q16_ONE / 10)   /* 0.4 */
 
 /* The tone core: the sine and the triangle of the same phase mixed with
  * this weight. The triangle carries the odd harmonics that give the tone
@@ -97,6 +117,11 @@
 #define H5_SNARE_NOISE_WEIGHT_Q16 (3 * H5_Q16_ONE / 10)
 #define H5_SNARE_CLICK_WEIGHT_Q16 (63 * H5_Q16_ONE / 80)
 #define H5_SNARE_SWEEP_DEPTH_Q16 H5_Q16_ONE
+
+/* The Snare's filter-envelope contour depth. The original snare card has no
+ * sweep knob, so the engine's default value is used and is not exposed as a
+ * parameter. */
+#define H5_SNARE_SWEEP_Q16 30802
 
 /* Output high-pass after the swept low-pass. A 200 Hz Butterworth section
  * thins the default shell tone too much; 50 Hz removes sub-bass rumble
@@ -214,13 +239,15 @@ static int32_t h5_pow10_q30(int32_t v)
 }
 
 /* Cutoff laws for the three swept filters, in Hz Q16. env16 is the cubed
- * envelope as Q16 (0..H5_Q16_ONE). These are called once per sample with the
- * current envelope and, for the table builders, at the two endpoints. */
+ * envelope as Q16 (0..H5_Q16_ONE) and sweep_q16 is the sweep amount at
+ * env = 1 (2000 Hz scaled by the strike level). These are called once per
+ * sample with the current envelope and, for the table builders, at the two
+ * endpoints. */
 static int32_t h5_sweep_cutoff(int32_t noise_pitch_q16, int32_t bend_q16,
-    int32_t env16)
+    int32_t env16, int32_t sweep_q16)
 {
     int32_t base = h5_sat_i32((int64_t)noise_pitch_q16
-        + h5_mul_q16(H5_NOISE_SWEEP_Q16, env16));
+        + h5_mul_q16(sweep_q16, env16));
 
     return h5_sat_i32((int64_t)base
         * (int64_t)(H5_Q16_ONE
@@ -228,13 +255,55 @@ static int32_t h5_sweep_cutoff(int32_t noise_pitch_q16, int32_t bend_q16,
         >> 16);
 }
 
-static int32_t h5_snare_cutoff(int32_t noise_pitch_q16, int32_t sweep_q16,
-    int32_t env16)
+static int32_t h5_snare_cutoff(int32_t noise_pitch_q16, int32_t env16)
 {
-    int32_t sweep = h5_mul_q16(H5_SNARE_SWEEP_DEPTH_Q16, sweep_q16);
+    int32_t sweep = h5_mul_q16(H5_SNARE_SWEEP_DEPTH_Q16, H5_SNARE_SWEEP_Q16);
 
     return h5_mul_q16(noise_pitch_q16,
         H5_Q16_ONE - h5_mul_q16(sweep, H5_Q16_ONE - env16));
+}
+
+/* The velocity laws of one hit. level_q16 is the strike level (0..1) and
+ * click_floor_q16 is the transient weight of a silent strike. */
+static void h5_velocity_compute(struct h5_velocity_s *vel, int32_t level_q16,
+    int32_t click_floor_q16)
+{
+    int32_t g2 = h5_scale_q16(level_q16, level_q16);
+    int32_t g4 = h5_scale_q16(g2, g2);
+    int32_t rest = H5_Q16_ONE - g4;
+
+    vel->level_q16 = level_q16;
+    /* The factors are written as 1 - x*(1 - g^4), so a hit at full strike
+     * level gives exactly 1 and the sound is unchanged. */
+    vel->depth_q16 = H5_Q16_ONE
+        - h5_scale_q16(H5_VEL_DEPTH_GAIN_Q16, rest);
+    vel->sweep_q16 = g4;
+    vel->click_q16 = H5_Q16_ONE
+        - h5_scale_q16(H5_Q16_ONE - click_floor_q16, rest);
+}
+
+/* The strike level of a hit at full velocity: the pitch envelope sweeps the
+ * whole Bend setting, the noise cutoff sweeps the full 2000 Hz and the
+ * transient carries its full weight. */
+static void h5_velocity_full(struct h5_velocity_s *vel)
+{
+    vel->level_q16 = H5_Q16_ONE;
+    vel->depth_q16 = H5_Q16_ONE;
+    vel->sweep_q16 = H5_Q16_ONE;
+    vel->click_q16 = H5_Q16_ONE;
+}
+
+/* The bend of this hit, in semitones: the setting scaled by the velocity
+ * depth factor. */
+static int32_t h5_velocity_bend(int32_t bend_q16, const struct h5_velocity_s *vel)
+{
+    return h5_scale_q16(bend_q16, vel->depth_q16);
+}
+
+/* The noise cutoff sweep amount of this hit, in Hz Q16. */
+static int32_t h5_velocity_sweep(const struct h5_velocity_s *vel)
+{
+    return h5_scale_q16(H5_NOISE_SWEEP_Q16, vel->sweep_q16);
 }
 
 /* Oscillator increment for f = TonePitch * 1.5^(Bend*env^3/12). env3 is the
@@ -290,7 +359,8 @@ static int32_t h5_pitch_lookup(const struct h5_pitch_curve_s *curve,
 /* The shared pitch setup: the oscillator increment at TonePitch and the
  * precomputed increment curve. All three engines use it unchanged. */
 static void h5_setup_pitch(struct h5_pitch_curve_s *curve, int32_t *base_inc,
-    const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate)
+    const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate,
+    int32_t depth_q16)
 {
     /* cycles/sample = pitch/rate; the 28-bit phase unit adds 2^28. pitch is
      * Q16 Hz, so the numerator is pitch << 12. */
@@ -300,7 +370,8 @@ static void h5_setup_pitch(struct h5_pitch_curve_s *curve, int32_t *base_inc,
         inc = 1;
     }
     *base_inc = (int32_t)inc;
-    h5_pitch_build(curve, *base_inc, params[H5_PARAM_BEND]);
+    h5_pitch_build(curve, *base_inc, h5_scale_q16(params[H5_PARAM_BEND],
+        depth_q16));
 }
 
 /* The tone oscillator: advance the phase by the increment the pitch curve
@@ -410,8 +481,10 @@ static const int32_t h5_snare_rattle_weight[4] = {
  *   s      = sin(2*pi*phi), st = the triangle of the same phase
  *   core   = 0.55*s + 0.45*st
  *   tone   = env_t^3 * 0.85*NoiseTone^0.125*(1-Click)^0.25 * core
- *   out    = tanh(1.5*(tone+noise+click)) * 1.10 -> HP15
- *   (the single Decay control sets both the tone and noise envelopes)
+ *   out    = tanh(1.5*g*(tone+noise+click)) * 1.10 -> HP15
+ *   (the single Decay control sets both the tone and noise envelopes;
+ *    g is the strike level of the hit, and the bend depth and the noise
+ *    sweep follow it as well)
  */
 
 /* Apply the parameters to the Kick engine. A parameter change goes through
@@ -443,7 +516,8 @@ static void h5_kick_apply(void *engine,
     k->click_gain_q16 = h5_mul_q16(H5_KICK_CLICK_WEIGHT_Q16,
         h5_pow025_q16(click));
 
-    h5_setup_pitch(&k->pitch_curve, &k->base_inc, params, sample_rate);
+    h5_setup_pitch(&k->pitch_curve, &k->base_inc, params, sample_rate,
+        k->vel.depth_q16);
 
     /* Envelopes. The tone env drives both amplitude and pitch and starts
      * fast; the noise env shares the tone release; the click burst keeps
@@ -457,9 +531,10 @@ static void h5_kick_apply(void *engine,
     h5_svf_tune(&k->out_filter, H5_SVF_HP,
         H5_KICK_OUT_HP_HZ * H5_Q16_ONE, H5_KICK_OUT_Q16, sample_rate);
     h5_sweep_build(&k->noise_sweep, H5_SVF_LP, H5_KICK_RESONANCE_Q16,
-        h5_sweep_cutoff(k->noise_pitch_q16, H5_KICK_FILTER_BEND_Q16, 0),
+        h5_sweep_cutoff(k->noise_pitch_q16, H5_KICK_FILTER_BEND_Q16, 0,
+            h5_velocity_sweep(&k->vel)),
         h5_sweep_cutoff(k->noise_pitch_q16, H5_KICK_FILTER_BEND_Q16,
-            H5_Q16_ONE),
+            H5_Q16_ONE, h5_velocity_sweep(&k->vel)),
         sample_rate);
 }
 
@@ -493,13 +568,28 @@ void h5_kick_setup(void *engine, h5_voice voice,
     k->pf.l50 = 0;
     k->pf.l20 = 0;
     k->head.active = 0u;
+    h5_velocity_full(&k->vel);
 
     h5_kick_apply(engine, params, sample_rate);
 }
 
-void h5_kick_trigger(void *engine)
+void h5_kick_trigger(void *engine, int32_t level_q16, uint32_t sample_rate)
 {
     struct h5_kick_s *k = (struct h5_kick_s *)engine;
+
+    /* The strike level of this hit: it scales the level of the whole hit,
+     * the depth of the pitch envelope, the noise cutoff sweep and the
+     * weight of the transient. The pitch curve and the swept-filter
+     * coefficients depend on it, so both are rebuilt for the hit. */
+    h5_velocity_compute(&k->vel, level_q16, H5_KICK_CLICK_FLOOR_Q16);
+    h5_pitch_build(&k->pitch_curve, k->base_inc,
+        h5_velocity_bend(k->bend_q16, &k->vel));
+    h5_sweep_build(&k->noise_sweep, H5_SVF_LP, H5_KICK_RESONANCE_Q16,
+        h5_sweep_cutoff(k->noise_pitch_q16, H5_KICK_FILTER_BEND_Q16, 0,
+            h5_velocity_sweep(&k->vel)),
+        h5_sweep_cutoff(k->noise_pitch_q16, H5_KICK_FILTER_BEND_Q16,
+            H5_Q16_ONE, h5_velocity_sweep(&k->vel)),
+        sample_rate);
 
     k->phase = 0u;
     h5_env_trigger(&k->env_noise);
@@ -544,7 +634,7 @@ int32_t h5_kick_process(void *engine)
      * fc_n = (NoisePitch + 2000*env_n^3) * (1 - 0.5*(1 - env_n^3)). */
     env3 = h5_cube_q30(env_n);
     cutoff = h5_sweep_cutoff(k->noise_pitch_q16, H5_KICK_FILTER_BEND_Q16,
-        env3 >> 14);
+        env3 >> 14, h5_velocity_sweep(&k->vel));
     nf = h5_noise_band(&k->pf, &k->noise, &k->noise_filter, &k->noise_sweep,
         cutoff);
 
@@ -557,7 +647,8 @@ int32_t h5_kick_process(void *engine)
      * is silent once the burst envelope has decayed, so skip its work. */
     trans = 0;
     if (env_c > 0) {
-        trans = h5_burst(nf, k->click_gain_q16, env_c);
+        trans = h5_burst(nf,
+            h5_scale_q16(k->click_gain_q16, k->vel.click_q16), env_c);
     }
 
     /* Tone: env^3 * 0.85*NoiseTone^0.125*(1-Click)^0.25
@@ -567,6 +658,10 @@ int32_t h5_kick_process(void *engine)
 
     sum = h5_sat_add_q31(tone, noise);
     sum = h5_sat_add_q31(sum, trans);
+
+    /* The strike level scales the whole hit before the shaper, so a soft
+     * hit is quieter and the saturation curve sees a smaller argument. */
+    sum = h5_scale_q16(sum, k->vel.level_q16);
 
     /* Fixed output gain 1.10479 into the 15 Hz high-pass. */
     return h5_output_stage(sum, &k->out_filter);
@@ -583,8 +678,9 @@ int32_t h5_kick_process(void *engine)
  *   body    = env^3 * (0.46*NoiseTone^0.125*(1-Click)^0.25*core
  *                     + 0.45*(1-NoiseTone)^0.7*(1-Click)^0.7*nf)
  *   click   = env_c^10 * 0.75*Click^0.25 * nf
- *   out     = tanh(1.5*mix) * 1.10 -> HP25
- *   (each Tom instance tunes its own filter-bend depth)
+ *   out     = tanh(1.5*g*mix) * 1.10 -> HP25
+ *   (each Tom instance tunes its own filter-bend depth; g is the strike
+ *    level of the hit, and the bend depth and the noise sweep follow it)
  */
 
 /* Apply the parameters to the Tom engine. */
@@ -615,7 +711,8 @@ static void h5_tom_apply(void *engine,
     t->click_gain_q16 = h5_mul_q16(h5_pow025_q16(click),
         H5_TOM_CLICK_GAIN_Q16);
 
-    h5_setup_pitch(&t->pitch_curve, &t->base_inc, params, sample_rate);
+    h5_setup_pitch(&t->pitch_curve, &t->base_inc, params, sample_rate,
+        t->vel.depth_q16);
 
     /* Body envelope: AR^3 with a 0.005*Decay attack and the Decay release.
      * Transient envelope: AR^10, 1 ms attack, 0.25*Decay release. */
@@ -627,8 +724,10 @@ static void h5_tom_apply(void *engine,
     h5_svf_tune(&t->out_filter, H5_SVF_HP,
         H5_TOM_OUT_HP_HZ * H5_Q16_ONE, H5_TOM_OUT_Q16, sample_rate);
     h5_sweep_build(&t->noise_sweep, H5_SVF_LP, H5_TOM_RESONANCE_Q16,
-        h5_sweep_cutoff(t->noise_pitch_q16, t->filter_bend_q16, 0),
-        h5_sweep_cutoff(t->noise_pitch_q16, t->filter_bend_q16, H5_Q16_ONE),
+        h5_sweep_cutoff(t->noise_pitch_q16, t->filter_bend_q16, 0,
+            h5_velocity_sweep(&t->vel)),
+        h5_sweep_cutoff(t->noise_pitch_q16, t->filter_bend_q16, H5_Q16_ONE,
+            h5_velocity_sweep(&t->vel)),
         sample_rate);
 }
 
@@ -660,6 +759,7 @@ void h5_tom_setup(void *engine, h5_voice voice,
     t->pf.l50 = 0;
     t->pf.l20 = 0;
     t->head.active = 0u;
+    h5_velocity_full(&t->vel);
     if (voice == H5_VOICE_TOM_2) {
         t->filter_bend_q16 = H5_TOM_FILTER_BEND_2_Q16;
     } else if (voice == H5_VOICE_TOM_3) {
@@ -669,9 +769,20 @@ void h5_tom_setup(void *engine, h5_voice voice,
     h5_tom_apply(engine, params, sample_rate);
 }
 
-void h5_tom_trigger(void *engine)
+void h5_tom_trigger(void *engine, int32_t level_q16, uint32_t sample_rate)
 {
     struct h5_tom_s *t = (struct h5_tom_s *)engine;
+
+    /* The strike level of this hit; see the Kick engine for the laws. */
+    h5_velocity_compute(&t->vel, level_q16, H5_STD_CLICK_FLOOR_Q16);
+    h5_pitch_build(&t->pitch_curve, t->base_inc,
+        h5_velocity_bend(t->bend_q16, &t->vel));
+    h5_sweep_build(&t->noise_sweep, H5_SVF_LP, H5_TOM_RESONANCE_Q16,
+        h5_sweep_cutoff(t->noise_pitch_q16, t->filter_bend_q16, 0,
+            h5_velocity_sweep(&t->vel)),
+        h5_sweep_cutoff(t->noise_pitch_q16, t->filter_bend_q16, H5_Q16_ONE,
+            h5_velocity_sweep(&t->vel)),
+        sample_rate);
 
     t->phase = 0u;
     h5_env_trigger(&t->env);
@@ -709,7 +820,7 @@ int32_t h5_tom_process(void *engine)
 
     /* fc_n = (NoisePitch + 2000*env^3)*(1 - FB*(1 - env^3)). */
     cutoff = h5_sweep_cutoff(t->noise_pitch_q16, t->filter_bend_q16,
-        env3 >> 14);
+        env3 >> 14, h5_velocity_sweep(&t->vel));
     nf = h5_noise_band(&t->pf, &t->noise, &t->noise_filter, &t->noise_sweep,
         cutoff);
 
@@ -722,9 +833,13 @@ int32_t h5_tom_process(void *engine)
      * envelope is silent. */
     click = 0;
     if (env_click > 0) {
-        click = h5_burst(nf, t->click_gain_q16, env_click);
+        click = h5_burst(nf,
+            h5_scale_q16(t->click_gain_q16, t->vel.click_q16), env_click);
     }
     mix = h5_sat_add_q31(body, click);
+
+    /* The strike level scales the whole hit before the shaper. */
+    mix = h5_scale_q16(mix, t->vel.level_q16);
 
     return h5_output_stage(mix, &t->out_filter);
 }
@@ -741,7 +856,11 @@ int32_t h5_tom_process(void *engine)
  *                     + 0.3*(1-NoiseTone)^0.7*(1-Click)^0.7*rattle)
  *   click   = env_c^10 * 63/80*Click^0.25 * rattle
  *   mix     = body + click
- *   out     = tanh(1.5*mix) * 1.10 -> HP_SVF(~50 Hz, Q = 1/sqrt(2))
+ *   out     = tanh(1.5*g*mix) * 1.10 -> HP_SVF(~50 Hz, Q = 1/sqrt(2))
+ *
+ * The strike level g of the hit scales the whole mix and the transient, and
+ * the bend depth follows it; the rattle path's filter contour is the
+ * engine's default, because the original snare card has no sweep knob.
  *
  * The swept low-pass sits on the rattle path only, so the shell tone and
  * the click burst keep their full bandwidth. The fixed high-pass thins
@@ -765,7 +884,6 @@ static void h5_snare_apply(void *engine,
 
     sn->bend_q16 = params[H5_PARAM_BEND];
     sn->noise_pitch_q16 = params[H5_PARAM_NOISE_PITCH];
-    sn->sweep_q16 = params[H5_PARAM_SWEEP];
 
     /* The Snare's Noise/Tone control is a balance, not a tone amount: the
      * shell tone follows the eighth root of the setting (NoiseTone^0.125)
@@ -781,7 +899,8 @@ static void h5_snare_apply(void *engine,
     sn->click_gain_q16 = h5_mul_q16(h5_pow025_q16(click),
         H5_SNARE_CLICK_WEIGHT_Q16);
 
-    h5_setup_pitch(&sn->pitch_curve, &sn->base_inc, params, sample_rate);
+    h5_setup_pitch(&sn->pitch_curve, &sn->base_inc, params, sample_rate,
+        sn->vel.depth_q16);
 
     /* Body envelope: AR^3, 1 ms attack, Decay release. Transient: AR^10,
      * 1 ms attack, a short release that follows the decay loosely. */
@@ -806,8 +925,8 @@ static void h5_snare_apply(void *engine,
     h5_svf_tune(&sn->hp_filter, H5_SVF_HP, H5_SNARE_OUT_HP_HZ,
         H5_SNARE_OUT_HP_Q16, sample_rate);
     h5_sweep_build(&sn->out_sweep, H5_SVF_LP, H5_SNARE_OUT_Q16,
-        h5_snare_cutoff(sn->noise_pitch_q16, sn->sweep_q16, 0),
-        h5_snare_cutoff(sn->noise_pitch_q16, sn->sweep_q16, H5_Q16_ONE),
+        h5_snare_cutoff(sn->noise_pitch_q16, 0),
+        h5_snare_cutoff(sn->noise_pitch_q16, H5_Q16_ONE),
         sample_rate);
 }
 
@@ -839,20 +958,27 @@ void h5_snare_setup(void *engine, h5_voice voice,
     sn->tone_gain_q16 = 0;
     sn->noise_gain_q16 = 0;
     sn->click_gain_q16 = 0;
-    sn->sweep_q16 = 0;
     sn->pf.k50 = 0;
     sn->pf.k20 = 0;
     sn->pf.l50 = 0;
     sn->pf.l20 = 0;
     sn->head.active = 0u;
+    h5_velocity_full(&sn->vel);
 
     h5_snare_apply(engine, params, sample_rate);
 }
 
-void h5_snare_trigger(void *engine)
+void h5_snare_trigger(void *engine, int32_t level_q16, uint32_t sample_rate)
 {
     struct h5_snare_s *sn = (struct h5_snare_s *)engine;
     size_t i;
+
+    /* The strike level of this hit; see the Kick engine for the laws. The
+     * pitch curve depends on it, so it is rebuilt for the hit. */
+    (void)sample_rate;
+    h5_velocity_compute(&sn->vel, level_q16, H5_STD_CLICK_FLOOR_Q16);
+    h5_pitch_build(&sn->pitch_curve, sn->base_inc,
+        h5_velocity_bend(sn->bend_q16, &sn->vel));
 
     sn->phase = 0u;
     h5_env_trigger(&sn->env);
@@ -923,7 +1049,7 @@ int32_t h5_snare_process(void *engine)
     /* The rattle passes the swept low-pass. Keeping the sweep on the rattle
      * path only leaves the shell tone and the click burst at full bandwidth,
      * which gives the attack its snap and keeps the tone pitch clean. */
-    cutoff = h5_snare_cutoff(sn->noise_pitch_q16, sn->sweep_q16, env3 >> 14);
+    cutoff = h5_snare_cutoff(sn->noise_pitch_q16, env3 >> 14);
     h5_sweep_apply(&sn->out_sweep, cutoff, &sn->out_filter);
     rattle = h5_svf_run(&sn->out_filter, rattle);
 
@@ -936,9 +1062,13 @@ int32_t h5_snare_process(void *engine)
      * envelope is silent. */
     click = 0;
     if (env_click > 0) {
-        click = h5_burst(rattle, sn->click_gain_q16, env_click);
+        click = h5_burst(rattle,
+            h5_scale_q16(sn->click_gain_q16, sn->vel.click_q16), env_click);
     }
     mix = h5_sat_add_q31(body, click);
+
+    /* The strike level scales the whole hit before the shaper. */
+    mix = h5_scale_q16(mix, sn->vel.level_q16);
 
     /* Output stage: tanh, the fixed 1.10 gain, and a fixed high-pass. */
     mix = h5_mul_q16(h5_softclip_q31(mix), H5_OUT_GAIN_Q16);

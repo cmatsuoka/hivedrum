@@ -12,6 +12,8 @@
  *   --tom               render a Tom hit and verify its controls
  *   --snare             render a Snare hit and verify its controls
  *   --mixer             verify volume, pan and the stereo output stage
+ *   --velocity          verify the velocity response and the sensitivity
+ *                       control
  *   --help              this text
  *
  * Exit status is 0 when every check passed, 1 otherwise.
@@ -315,19 +317,20 @@ static int command_api(void)
         ok("h5_set_param() clamps values above the maximum");
     }
 
-    /* Unsupported (voice, param) pair. */
-    status = h5_set_param((h5_context)ctx, H5_VOICE_KICK, H5_PARAM_SWEEP, 0);
-    if (status != H5_ERR_UNSUPPORTED) {
-        fail("h5_set_param() did not reject an unsupported (voice, param)");
+    /* An out-of-range parameter is rejected. */
+    status = h5_set_param((h5_context)ctx, H5_VOICE_KICK, H5_PARAM_COUNT, 0);
+    if (status != H5_ERR_INVALID_PARAM) {
+        fail("h5_set_param() did not reject an out-of-range parameter");
     } else {
-        ok("h5_set_param() rejects unsupported (voice, param) pairs");
+        ok("h5_set_param() rejects an out-of-range parameter");
     }
 
-    status = h5_get_param((h5_context)ctx, H5_VOICE_KICK, H5_PARAM_SWEEP, &value);
-    if (status != H5_ERR_UNSUPPORTED) {
-        fail("h5_get_param() did not reject an unsupported (voice, param)");
+    status = h5_get_param((h5_context)ctx, H5_VOICE_KICK, H5_PARAM_COUNT,
+        &value);
+    if (status != H5_ERR_INVALID_PARAM) {
+        fail("h5_get_param() did not reject an out-of-range parameter");
     } else {
-        ok("h5_get_param() rejects unsupported (voice, param) pairs");
+        ok("h5_get_param() rejects an out-of-range parameter");
     }
 
     /* h5_param_supported(). */
@@ -336,19 +339,18 @@ static int command_api(void)
     } else {
         ok("h5_param_supported() accepts a valid pair");
     }
-    if (h5_param_supported(H5_VOICE_KICK, H5_PARAM_SWEEP)) {
-        fail("h5_param_supported() wrongly reports Kick Sweep supported");
-    } else {
-        ok("h5_param_supported() rejects an invalid pair");
-    }
-    if (!h5_param_supported(H5_VOICE_SNARE, H5_PARAM_SWEEP)) {
-        fail("h5_param_supported() wrongly reports Snare Sweep unsupported");
+    if (!h5_param_supported(H5_VOICE_KICK, H5_PARAM_SENSITIVITY) ||
+        !h5_param_supported(H5_VOICE_SNARE, H5_PARAM_SENSITIVITY) ||
+        !h5_param_supported(H5_VOICE_TOM_1, H5_PARAM_SENSITIVITY) ||
+        !h5_param_supported(H5_VOICE_TOM_2, H5_PARAM_SENSITIVITY) ||
+        !h5_param_supported(H5_VOICE_TOM_3, H5_PARAM_SENSITIVITY)) {
+        fail("h5_param_supported() does not report Sensitivity on every voice");
     } else if (h5_get_param((h5_context)ctx, H5_VOICE_SNARE,
-            H5_PARAM_SWEEP, &value) != H5_OK ||
-        value != (47 * H5_Q16_ONE + 50) / 100) {
-        fail("Snare Sweep does not default to 0.47");
+            H5_PARAM_SENSITIVITY, &value) != H5_OK ||
+        value != H5_Q16_ONE) {
+        fail("Sensitivity does not default to 1");
     } else {
-        ok("Snare Sweep is supported with the default 0.47");
+        ok("Sensitivity is supported on every voice with the default 1");
     }
     if (h5_param_supported(H5_VOICE_COUNT, H5_PARAM_DECAY) ||
         h5_param_supported(H5_VOICE_KICK, H5_PARAM_COUNT)) {
@@ -559,6 +561,59 @@ static int command_api(void)
         ok("h5_trigger() rejects an invalid instrument");
     }
 
+    /* Triggering with a velocity. */
+    status = h5_trigger_velocity((h5_context)ctx, H5_INSTR_KICK, 100u);
+    if (status != H5_OK) {
+        fail("h5_trigger_velocity() did not return OK");
+    } else {
+        ok("h5_trigger_velocity() accepts a valid velocity");
+    }
+
+    status = h5_trigger_velocity((h5_context)ctx, H5_INSTR_COUNT, 100u);
+    if (status != H5_ERR_INVALID_INSTRUMENT) {
+        fail("h5_trigger_velocity() did not reject an invalid instrument");
+    } else {
+        ok("h5_trigger_velocity() rejects an invalid instrument");
+    }
+
+    status = h5_trigger_velocity((h5_context)ctx, H5_INSTR_KICK, 200u);
+    if (status != H5_ERR_RANGE) {
+        fail("h5_trigger_velocity() did not reject a velocity above 127");
+    } else {
+        ok("h5_trigger_velocity() rejects a velocity above 127");
+    }
+
+    if (h5_trigger_velocity(0, H5_INSTR_KICK, 100u) != H5_ERR_INVALID_CONTEXT) {
+        fail("h5_trigger_velocity(NULL, ...) did not return INVALID_CONTEXT");
+    } else {
+        ok("h5_trigger_velocity() rejects a NULL context");
+    }
+
+    /* The strike level of a hit follows the velocity and the voice's
+     * sensitivity: at sensitivity 0 the velocity is ignored. */
+    {
+        int32_t full = h5_voice_strike_level(ctx, H5_VOICE_KICK, 127u);
+        int32_t soft = h5_voice_strike_level(ctx, H5_VOICE_KICK, 32u);
+
+        if (full != H5_Q16_ONE) {
+            fail("the strike level of a full-velocity hit is not 1");
+        } else if (soft <= 0 || soft >= full) {
+            fail("a soft hit does not get a lower strike level");
+        } else {
+            ok("the strike level follows the velocity");
+        }
+
+        h5_set_param((h5_context)ctx, H5_VOICE_KICK, H5_PARAM_SENSITIVITY, 0);
+        if (h5_voice_strike_level(ctx, H5_VOICE_KICK, 32u) != full) {
+            fail("sensitivity 0 does not ignore the velocity");
+        } else {
+            ok("sensitivity 0 ignores the velocity");
+        }
+
+        h5_set_param((h5_context)ctx, H5_VOICE_KICK, H5_PARAM_SENSITIVITY,
+            H5_Q16_ONE);
+    }
+
     /* Null-context handling. */
     if (h5_set_param(0, H5_VOICE_KICK, H5_PARAM_DECAY, H5_Q16_ONE) !=
         H5_ERR_INVALID_CONTEXT) {
@@ -647,6 +702,10 @@ int main(int argc, char **argv)
     }
     if (strcmp(command, "--mixer") == 0) {
         return command_mixer();
+    }
+
+    if (strcmp(command, "--velocity") == 0) {
+        return command_velocity();
     }
     if (strcmp(command, "--help") == 0 || strcmp(command, "-h") == 0) {
         usage(argv[0]);

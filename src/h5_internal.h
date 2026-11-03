@@ -263,12 +263,34 @@ struct h5_engine_s {
     uint8_t active;   /* the engine still has output to render */
 };
 
+/* The velocity laws of one hit.
+ *
+ * The strike level is a per-hit quantity, so the engine recomputes these
+ * factors at every trigger. `level` is the strike level itself (0..1, Q16),
+ * and the three factors are what the engine does with it:
+ *
+ *   depth = 0.8 + 0.2*level^4   the pitch envelope sweeps 80 % of the Bend
+ *                                setting at a soft strike and the full
+ *                                setting at a hard one
+ *   sweep = level^4             the noise cutoff sweeps by 2000*level^4 Hz
+ *   click = floor + (1-floor)*level^4
+ *                                the transient weight; the floor is 0.3 for
+ *                                the Kick and 0.4 for the Snare and Tom
+ */
+struct h5_velocity_s {
+    int32_t level_q16;
+    int32_t depth_q16;
+    int32_t sweep_q16;
+    int32_t click_q16;
+};
+
 /* Kick voice runtime state. The engine keeps its own copies of the parameters
  * it needs per sample so the audio path never reads the parameter matrix.
  * Engine outputs are Q30 (1.0 = 1 << 30) with one headroom bit for the
  * shaper stage's overshoot; the mixer converts. */
 struct h5_kick_s {
     struct h5_engine_s head;
+    struct h5_velocity_s vel;   /* the velocity laws of the current hit */
     struct h5_env_s env_noise;  /* noise AR: ~2 ms attack, Decay release */
     struct h5_env_s env_tone;   /* tone AR: 0.005*Decay attack, Decay release */
     struct h5_env_s env_click;  /* burst AR^10: 1 ms, 0.2*Decay+0.1 release */
@@ -297,6 +319,7 @@ struct h5_kick_s {
  * and its own filter-bend depth (the three tunings differ per instance). */
 struct h5_tom_s {
     struct h5_engine_s head;
+    struct h5_velocity_s vel;   /* the velocity laws of the current hit */
     struct h5_env_s env;       /* body AR: 0.005*Decay attack, Decay release */
     struct h5_env_s env_click; /* burst AR^10: 1 ms attack, 0.25*Decay */
     struct h5_noise_s noise;
@@ -318,6 +341,7 @@ struct h5_tom_s {
 /* Snare voice runtime state. */
 struct h5_snare_s {
     struct h5_engine_s head;
+    struct h5_velocity_s vel;   /* the velocity laws of the current hit */
     struct h5_env_s env;       /* body AR: 1 ms attack, Decay release */
     struct h5_env_s env_click; /* transient AR^10: 1 ms attack,
                                 * 0.2*Decay+0.1 s release */
@@ -335,7 +359,6 @@ struct h5_snare_s {
     int32_t tone_gain_q16;     /* NoiseTone^0.125 * (1-Click)^0.25 */
     int32_t noise_gain_q16;    /* 0.3 * (1-NoiseTone)^0.7 * (1-Click)^0.7 */
     int32_t click_gain_q16;    /* 63/80 * Click^0.25 */
-    int32_t sweep_q16;         /* filter-envelope contour depth */
 };
 
 /* The concrete context behind the opaque h5_context handle. */
@@ -384,7 +407,7 @@ struct h5_engine_ops {
         const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate);
     void (*configure)(void *engine,
         const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate);
-    void (*trigger)(void *engine);
+    void (*trigger)(void *engine, int32_t level_q16, uint32_t sample_rate);
     int32_t (*process)(void *engine);
 };
 
@@ -404,7 +427,7 @@ extern const struct h5_voice_slot h5_voice_slots[H5_VOICE_COUNT];
 /* Kick engine. The engine pointer addresses a struct h5_kick_s. */
 void h5_kick_setup(void *engine, h5_voice voice,
     const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate);
-void h5_kick_trigger(void *engine);
+void h5_kick_trigger(void *engine, int32_t level_q16, uint32_t sample_rate);
 int32_t h5_kick_process(void *engine);
 
 /* Tom engine. The engine pointer addresses a struct h5_tom_s. Times and
@@ -413,19 +436,31 @@ int32_t h5_kick_process(void *engine);
  * successive hits are not identical. */
 void h5_tom_setup(void *engine, h5_voice voice,
     const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate);
-void h5_tom_trigger(void *engine);
+void h5_tom_trigger(void *engine, int32_t level_q16, uint32_t sample_rate);
 int32_t h5_tom_process(void *engine);
 
 /* Snare engine. The engine pointer addresses a struct h5_snare_s. */
 void h5_snare_setup(void *engine, h5_voice voice,
     const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate);
-void h5_snare_trigger(void *engine);
+void h5_snare_trigger(void *engine, int32_t level_q16, uint32_t sample_rate);
 int32_t h5_snare_process(void *engine);
 
 /* Voice helpers used by the lifecycle, parameter and render entry points. */
 void h5_voice_setup_all(struct h5_context_s *ctx);
 void h5_voice_configure(struct h5_context_s *ctx, h5_voice voice);
 void h5_voice_trigger(struct h5_context_s *ctx, h5_voice voice);
+
+/* Trigger a voice with a MIDI velocity (0..127). The strike level of the
+ * hit follows the velocity and the voice's Sensitivity. */
+void h5_voice_trigger_velocity(struct h5_context_s *ctx, h5_voice voice,
+    uint32_t velocity);
+
+/* The strike level of a hit: the MIDI velocity scaled by the voice's
+ * Sensitivity. At sensitivity 0 the velocity is ignored and the strike
+ * level is full; at sensitivity 1 the strike level is velocity/127.
+ * velocity is in the MIDI scale 0..127. */
+int32_t h5_voice_strike_level(const struct h5_context_s *ctx, h5_voice voice,
+    uint32_t velocity);
 
 /* Map an instrument trigger to its voice. The instrument must be in range. */
 void h5_voice_trigger_instrument(struct h5_context_s *ctx,

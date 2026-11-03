@@ -84,6 +84,20 @@ static inline int32_t h5_sar32_round(int32_t v, unsigned shift)
     return (int32_t)((v + ((int64_t)1 << (shift - 1u))) >> shift);
 }
 
+/* Q16.16 value x Q16.16 factor -> Q16.16, truncated toward zero. Unlike
+ * h5_mul_q16() this does not round, so a factor of exactly 1.0 leaves the
+ * value unchanged. The strike-level path uses it so that a hit at full
+ * velocity is bit-identical to a hit without the velocity scaling. */
+static inline int32_t h5_scale_q16(int32_t x, int32_t factor_q16)
+{
+    int64_t p = h5_mulwide(x, factor_q16);
+
+    if (p >= 0) {
+        return h5_sat_i32(p >> 16);
+    }
+    return h5_sat_i32(-((-p) >> 16));
+}
+
 /* Q31 sample x Q16.16 control -> Q31, rounded and saturated. */
 static inline int32_t h5_mul_q16(int32_t x, int32_t c16)
 {

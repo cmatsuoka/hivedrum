@@ -214,6 +214,27 @@ h5_status h5_trigger(h5_context handle, h5_instrument instrument)
     return H5_OK;
 }
 
+h5_status h5_trigger_velocity(h5_context handle, h5_instrument instrument,
+    uint8_t velocity)
+{
+    struct h5_context_s *ctx = (struct h5_context_s *)handle;
+
+    if (ctx == 0) {
+        return H5_ERR_INVALID_CONTEXT;
+    }
+    if ((unsigned)instrument >= (unsigned)H5_INSTR_COUNT) {
+        return H5_ERR_INVALID_INSTRUMENT;
+    }
+    if (velocity > 127u) {
+        return H5_ERR_RANGE;
+    }
+
+    /* The instrument and voice enums share their order, so the mapping is a
+     * cast. */
+    h5_voice_trigger_velocity(ctx, (h5_voice)instrument, velocity);
+    return H5_OK;
+}
+
 uint32_t h5_version_number(void)
 {
     return H5_VERSION_NUMBER;

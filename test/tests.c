@@ -1000,7 +1000,7 @@ static int command_snare_noise(h5_context ctx)
 }
 
 static int16_t *render_snare_variant(int32_t noise_tone, int32_t click,
-    int32_t sweep, size_t frames)
+    size_t frames)
 {
     h5_context ctx = h5_create_context(TEST_RATE);
     int16_t *buffer;
@@ -1013,7 +1013,6 @@ static int16_t *render_snare_variant(int32_t noise_tone, int32_t click,
     set_snare(ctx, H5_PARAM_BEND, 0);
     set_snare(ctx, H5_PARAM_DECAY, H5_Q16_ONE);
     set_snare(ctx, H5_PARAM_CLICK_TONE, click);
-    set_snare(ctx, H5_PARAM_SWEEP, sweep);
     h5_trigger(ctx, H5_INSTR_SNARE);
     buffer = render(ctx, frames);
     h5_destroy_context(ctx);
@@ -1027,9 +1026,8 @@ static int command_snare_controls(void)
     int16_t *a;
     int16_t *b;
 
-    a = render_snare_variant(H5_Q16_ONE, 0, H5_Q16_ONE / 2, frames);
-    b = render_snare_variant(H5_Q16_ONE, H5_Q16_ONE, H5_Q16_ONE / 2,
-        frames);
+    a = render_snare_variant(H5_Q16_ONE, 0, frames);
+    b = render_snare_variant(H5_Q16_ONE, H5_Q16_ONE, frames);
     if (a == 0 || b == 0) {
         fail("out of memory");
         free(a);
@@ -1044,21 +1042,6 @@ static int command_snare_controls(void)
     free(a);
     free(b);
 
-    a = render_snare_variant(0, 0, 0, frames);
-    b = render_snare_variant(0, 0, H5_Q16_ONE, frames);
-    if (a == 0 || b == 0) {
-        fail("out of memory");
-        free(a);
-        free(b);
-        return -1;
-    }
-    if (memcmp(a, b, bytes) == 0) {
-        fail("Snare Sweep does not change the output");
-    } else {
-        ok("Snare Sweep changes the output");
-    }
-    free(a);
-    free(b);
     return 0;
 }
 
@@ -1456,6 +1439,147 @@ static int command_mixer_render(h5_context ctx)
 
     free(buffer);
     return result;
+}
+
+/*
+ * Velocity response.
+ *
+ * The strike level of a hit follows the MIDI velocity: it scales the level
+ * of the whole hit, the depth of the pitch envelope, the noise cutoff sweep
+ * and the weight of the transient. The per-voice Sensitivity knob scales how
+ * much of that response the velocity gets, and at 0 the velocity is ignored.
+ */
+
+/* Render one hit at a given velocity and sensitivity. */
+static int16_t *render_velocity(h5_instrument instrument, uint8_t velocity,
+    int32_t sensitivity, size_t frames)
+{
+    h5_context ctx = h5_create_context(TEST_RATE);
+    int16_t *buffer;
+
+    if (ctx == 0) {
+        return 0;
+    }
+    h5_reset(ctx);
+    h5_set_param(ctx, (h5_voice)instrument, H5_PARAM_SENSITIVITY,
+        sensitivity);
+    h5_trigger_velocity(ctx, instrument, velocity);
+    buffer = render(ctx, frames);
+    h5_destroy_context(ctx);
+    return buffer;
+}
+
+/* Render a Kick whose tone sweeps the full bend range, so the pitch
+ * envelope is visible in the first moments of the hit. */
+static int16_t *render_kick_sweep(uint8_t velocity, size_t frames)
+{
+    h5_context ctx = h5_create_context(TEST_RATE);
+    int16_t *buffer;
+
+    if (ctx == 0) {
+        return 0;
+    }
+    h5_reset(ctx);
+    h5_set_param(ctx, H5_VOICE_KICK, H5_PARAM_TONE_PITCH, 40 * H5_Q16_ONE);
+    h5_set_param(ctx, H5_VOICE_KICK, H5_PARAM_BEND, 62 * H5_Q16_ONE);
+    h5_set_param(ctx, H5_VOICE_KICK, H5_PARAM_NOISE_TONE, H5_Q16_ONE);
+    h5_set_param(ctx, H5_VOICE_KICK, H5_PARAM_CLICK_TONE, 0);
+    h5_set_param(ctx, H5_VOICE_KICK, H5_PARAM_DECAY, H5_Q16_ONE);
+    h5_trigger_velocity(ctx, H5_INSTR_KICK, velocity);
+    buffer = render(ctx, frames);
+    h5_destroy_context(ctx);
+    return buffer;
+}
+
+/* A soft hit is quieter than a hard one, and a hit at sensitivity 0 sounds
+ * the same at every velocity. */
+static int command_velocity_level(void)
+{
+    const size_t frames = frames_for_ms(TEST_RATE, 300u);
+    const size_t bytes = frames * 2u * sizeof(int16_t);
+    int16_t *full;
+    int16_t *soft;
+    int16_t *muted;
+    int16_t *silent;
+
+    full = render_velocity(H5_INSTR_KICK, 127u, H5_Q16_ONE, frames);
+    soft = render_velocity(H5_INSTR_KICK, 32u, H5_Q16_ONE, frames);
+    muted = render_velocity(H5_INSTR_KICK, 32u, 0, frames);
+    silent = render_velocity(H5_INSTR_KICK, 0u, H5_Q16_ONE, frames);
+    if (full == 0 || soft == 0 || muted == 0 || silent == 0) {
+        fail("out of memory");
+        free(full);
+        free(soft);
+        free(muted);
+        free(silent);
+        return -1;
+    }
+
+    if (peak_abs(soft, 0u, frames) >= peak_abs(full, 0u, frames)) {
+        fail("a soft hit is not quieter than a hard one");
+    } else {
+        ok("a soft hit is quieter than a hard one");
+    }
+
+    if (memcmp(muted, full, bytes) != 0) {
+        fail("sensitivity 0 does not ignore the velocity");
+    } else {
+        ok("sensitivity 0 ignores the velocity");
+    }
+
+    if (peak_abs(silent, 0u, frames) != 0) {
+        fail("a hit at velocity 0 is not silent");
+    } else {
+        ok("a hit at velocity 0 is silent");
+    }
+
+    free(full);
+    free(soft);
+    free(muted);
+    free(silent);
+    return 0;
+}
+
+/* The pitch envelope sweeps less far on a soft hit, so the tone starts
+ * lower. */
+static int command_velocity_bend(void)
+{
+    const size_t frames = frames_for_ms(TEST_RATE, 200u);
+    const size_t window = frames_for_ms(TEST_RATE, 20u);
+    int16_t *full;
+    int16_t *soft;
+    unsigned crossings_full;
+    unsigned crossings_soft;
+
+    full = render_kick_sweep(127u, frames);
+    soft = render_kick_sweep(20u, frames);
+    if (full == 0 || soft == 0) {
+        fail("out of memory");
+        free(full);
+        free(soft);
+        return -1;
+    }
+
+    crossings_full = zero_crossings(full, 0u, window);
+    crossings_soft = zero_crossings(soft, 0u, window);
+
+    if (crossings_soft >= crossings_full) {
+        fail("a soft hit does not sweep the pitch less far");
+    } else {
+        ok("a soft hit sweeps the pitch less far");
+    }
+
+    free(full);
+    free(soft);
+    return 0;
+}
+
+int command_velocity(void)
+{
+    if (command_velocity_level() != 0 || command_velocity_bend() != 0) {
+        return 1;
+    }
+    return failures == 0 ? 0 : 1;
 }
 
 int command_mixer(void)

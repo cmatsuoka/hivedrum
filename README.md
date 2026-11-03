@@ -81,7 +81,8 @@ Key entry points:
 | `h5_param_supported(voice, param)` | Query the control surface. |
 | `h5_set_instrument_volume` / `h5_get_instrument_volume` | Per-instrument mixer level (alias of `h5_set_param` / `h5_get_param` on `H5_PARAM_VOLUME`). |
 | `h5_set_instrument_pan` / `h5_get_instrument_pan` | Per-instrument pan (alias on `H5_PARAM_PAN`). |
-| `h5_trigger(ctx, instrument)` | Start one instrument. |
+| `h5_trigger(ctx, instrument)` | Start one instrument at full velocity. |
+| `h5_trigger_velocity(ctx, instrument, velocity)` | Start one instrument with a MIDI velocity (0..127). |
 | `h5_process(ctx, out, frames)` | Render stereo interleaved `int16_t` frames. |
 | `h5_is_active(ctx)` | True while any voice is still sounding. |
 
@@ -111,14 +112,23 @@ signed semitones for bend, and a 0..1 scalar for balance controls.
 | `H5_PARAM_DECAY` | All voices |
 | `H5_PARAM_NOISE_TONE` | All voices |
 | `H5_PARAM_CLICK_TONE` | All voices |
-| `H5_PARAM_SWEEP` | Snare only |
 | `H5_PARAM_VOLUME` | All voices (mixer level) |
 | `H5_PARAM_PAN` | All voices (mixer pan) |
+| `H5_PARAM_SENSITIVITY` | All voices (strike sensitivity) |
 
 Use `h5_param_supported()` to test a specific voice/parameter pair rather than
 hard-coding this matrix. Volume and Pan are ordinary parameters: they can be
 set and read with `h5_set_param()` / `h5_get_param()`, and `h5_reset()`
 restores their defaults from the same table.
+
+## Velocity
+
+`h5_trigger_velocity()` starts a hit with a MIDI velocity (0..127).
+`h5_trigger()` is the same as `h5_trigger_velocity()` with velocity 127.
+
+`H5_PARAM_SENSITIVITY` (0..1, default 1) scales how much of that response the
+velocity gets: at 1 the velocity is used as it comes, at 0 the velocity is
+ignored and every hit sounds at full strike level.
 
 ## Tests
 

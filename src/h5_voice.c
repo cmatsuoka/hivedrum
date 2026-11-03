@@ -44,12 +44,44 @@ void h5_voice_configure(struct h5_context_s *ctx, h5_voice voice)
         ctx->voice_params[voice], ctx->sample_rate);
 }
 
+int32_t h5_voice_strike_level(const struct h5_context_s *ctx, h5_voice voice,
+    uint32_t velocity)
+{
+    int32_t sensitivity = ctx->voice_params[voice][H5_PARAM_SENSITIVITY];
+    int32_t level;
+
+    if (velocity > 127u) {
+        velocity = 127u;
+    }
+
+    /* The strike level of the hit is velocity/127. */
+    level = (int32_t)(((int64_t)velocity * H5_Q16_ONE + 63) / 127);
+
+    /* The Sensitivity scales how much of the velocity the hit responds to.
+     * At 0 the velocity is ignored and the strike level is full; at 1 the
+     * strike level is the velocity itself. */
+    return (int32_t)((int64_t)(H5_Q16_ONE - sensitivity)
+        + h5_scale_q16(sensitivity, level));
+}
+
 void h5_voice_trigger(struct h5_context_s *ctx, h5_voice voice)
 {
     if ((unsigned)voice >= (unsigned)H5_VOICE_COUNT) {
         return;
     }
-    h5_voice_slots[voice].ops->trigger(h5_voice_engine(ctx, voice));
+    h5_voice_slots[voice].ops->trigger(h5_voice_engine(ctx, voice),
+        h5_voice_strike_level(ctx, voice, 127u), ctx->sample_rate);
+    ctx->active_mask |= (uint32_t)1u << (unsigned)voice;
+}
+
+void h5_voice_trigger_velocity(struct h5_context_s *ctx, h5_voice voice,
+    uint32_t velocity)
+{
+    if ((unsigned)voice >= (unsigned)H5_VOICE_COUNT) {
+        return;
+    }
+    h5_voice_slots[voice].ops->trigger(h5_voice_engine(ctx, voice),
+        h5_voice_strike_level(ctx, voice, velocity), ctx->sample_rate);
     ctx->active_mask |= (uint32_t)1u << (unsigned)voice;
 }
 

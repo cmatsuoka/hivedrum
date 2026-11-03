@@ -115,6 +115,7 @@ check: $(TEST) $(EXAMPLE_OBJS)
 	./$(TEST) --tom
 	./$(TEST) --snare
 	./$(TEST) --mixer
+	./$(TEST) --velocity
 
 clean:
 	rm -rf $(BUILD) $(LIB) $(TEST)

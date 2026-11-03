@@ -24,7 +24,7 @@ extern "C" {
 /* Library version. major/minor/patch are packed as 0x00MMmmpp.
  * The plain integer constants keep H5_VERSION_NUMBER usable in #if. */
 #define H5_VERSION_MAJOR 0
-#define H5_VERSION_MINOR 1
+#define H5_VERSION_MINOR 2
 #define H5_VERSION_PATCH 0
 #define H5_VERSION_NUMBER \
     ((H5_VERSION_MAJOR << 16) | (H5_VERSION_MINOR << 8) | H5_VERSION_PATCH)
@@ -68,10 +68,10 @@ typedef enum {
 
 /* Public sound parameters. The standard drum voices (Kick, Snare, Tom 1,
  * Tom 2, Tom 3) share the six faceplate controls Noise, Tone, Bend, Decay,
- * Noise/Tone and Click/Drum. Sweep is exposed for the Snare. Volume and Pan
- * are the per-voice mixer controls, supported on every voice. Not every
- * parameter applies to every voice; h5_param_supported() reports the supported
- * pairs. */
+ * Noise/Tone and Click/Drum. Volume and Pan are the per-voice mixer
+ * controls and Sensitivity is the per-voice strike sensitivity; all three are
+ * supported on every voice. Not every parameter applies to every voice;
+ * h5_param_supported() reports the supported pairs. */
 typedef enum {
     H5_PARAM_NOISE_PITCH = 0,
     H5_PARAM_TONE_PITCH,
@@ -79,9 +79,9 @@ typedef enum {
     H5_PARAM_DECAY,
     H5_PARAM_NOISE_TONE,
     H5_PARAM_CLICK_TONE,
-    H5_PARAM_SWEEP,
     H5_PARAM_VOLUME,
     H5_PARAM_PAN,
+    H5_PARAM_SENSITIVITY,
     H5_PARAM_COUNT
 } h5_param;
 
@@ -207,9 +207,27 @@ h5_status h5_get_instrument_pan(const h5_context ctx,
 h5_status h5_get_instrument_levels(const h5_context ctx,
     int32_t *levels);
 
-/* Trigger one of the five instruments. Each Tom instrument triggers its own Tom
- * voice, so Tom 1, Tom 2 and Tom 3 can sound simultaneously. */
+/* Trigger one of the five instruments at full velocity. Each Tom instrument
+ * triggers its own Tom voice, so Tom 1, Tom 2 and Tom 3 can sound
+ * simultaneously. Equivalent to h5_trigger_velocity() with velocity 127. */
 h5_status h5_trigger(h5_context ctx, h5_instrument instrument);
+
+/* Trigger one of the five instruments with a MIDI velocity.
+ *
+ * The velocity is the strike level of the hit, in the MIDI scale 0..127.
+ * The engine turns it into a strike level of velocity/127 and applies it the
+ * way the original does: the hit gets quieter, the pitch bend sweeps less
+ * far, the noise gets duller and the transient gets softer.
+ *
+ * The per-voice Sensitivity parameter scales how much of that response the
+ * velocity gets. At sensitivity 1 the velocity is used as it comes; at
+ * sensitivity 0 the velocity is ignored and every hit sounds at full
+ * strike level.
+ *
+ * A velocity above 127 is rejected with H5_ERR_RANGE and does not trigger
+ * the instrument. */
+h5_status h5_trigger_velocity(h5_context ctx, h5_instrument instrument,
+    uint8_t velocity);
 
 #ifdef __cplusplus
 } /* extern "C" */

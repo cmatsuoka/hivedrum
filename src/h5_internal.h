@@ -269,9 +269,9 @@ struct h5_engine_s {
  * factors at every trigger. `level` is the strike level itself (0..1, Q16),
  * and the three factors are what the engine does with it:
  *
- *   depth = 0.8 + 0.2*level^4   the pitch envelope sweeps 80 % of the Bend
- *                                setting at a soft strike and the full
- *                                setting at a hard one
+ *   depth = 0.1 + 0.9*level   the pitch envelope sweeps a tenth of the
+ *                                Bend setting at a silent strike and the
+ *                                full setting at a hard one
  *   sweep = level^4             the noise cutoff sweeps by 2000*level^4 Hz
  *   click = floor + (1-floor)*level^4
  *                                the transient weight; the floor is 0.3 for

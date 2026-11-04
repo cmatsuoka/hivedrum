@@ -1,4 +1,13 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="hive-logo-dark.svg">
+    <img src="hive-logo.svg" alt="Libhive logo" width="280">
+  </picture>
+</p>
+
 # Libhive
+
+*Libhive is under development and the API is currently unstable.*
 
 Libhive is a small, dependency-free C library that synthesizes a seven-voice
 percussion kit: Kick, Snare, three Toms, Cymbal and Hi-hat. It renders a

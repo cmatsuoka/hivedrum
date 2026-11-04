@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="467 142 473 337" width="473" height="337" role="img" aria-label="Hive-V hexagon mark">
+  <defs>
+    <g id="hex" fill="none" stroke="#3b3c3e" stroke-width="7" stroke-linejoin="miter">
+      <path d="M 0,-79.5 L 68.849,-39.75 L 68.849,39.75 L 0,79.5 L -68.849,39.75 L -68.849,-39.75 Z"/>
+      <path d="M 0,-60 L 51.962,-30 L 51.962,30 L 0,60 L -51.962,30 L -51.962,-30 Z"/>
+      <path stroke-linecap="round" d="M 0,-39 L 0,-76"/>
+      <path stroke-linecap="round" d="M 33.775,-19.5 L 65.818,-38"/>
+      <path stroke-linecap="round" d="M 33.775,19.5 L 65.818,38"/>
+      <path stroke-linecap="round" d="M 0,39 L 0,76"/>
+      <path stroke-linecap="round" d="M -33.775,19.5 L -65.818,38"/>
+      <path stroke-linecap="round" d="M -33.775,-19.5 L -65.818,-38"/>
+      <circle cx="0" cy="0" r="5.5" fill="#3b3c3e" stroke="none"/>
+    </g>
+  </defs>
+  <use href="#hex" x="550" y="237"/>
+  <use href="#hex" x="703.5" y="237"/>
+  <use href="#hex" x="857" y="237"/>
+  <use href="#hex" x="623.5" y="379"/>
+  <use href="#hex" x="780.5" y="379"/>
+</svg>

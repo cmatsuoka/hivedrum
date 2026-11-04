@@ -1552,8 +1552,8 @@ static int metallic_hit(h5_voice voice, h5_instrument instrument,
     return result;
 }
 
-/* The Noise/Tone control moves the mix between the metallic bank and the
- * noise component. */
+/* The Noise/Tone control is the tone amount of the noise path: at 1 the
+ * voice is the metallic bank alone, at 0 the noise alone. */
 static int metallic_balance(h5_voice voice, h5_instrument instrument)
 {
     h5_context ctx = h5_create_context(TEST_RATE);
@@ -1570,12 +1570,12 @@ static int metallic_balance(h5_voice voice, h5_instrument instrument)
     }
 
     h5_reset(ctx);
-    set_metallic(ctx, voice, H5_PARAM_NOISE_TONE, 0);
+    set_metallic(ctx, voice, H5_PARAM_NOISE_TONE, H5_Q16_ONE);
     h5_trigger(ctx, instrument);
     metallic = render(ctx, frames);
 
     h5_reset(ctx);
-    set_metallic(ctx, voice, H5_PARAM_NOISE_TONE, H5_Q16_ONE);
+    set_metallic(ctx, voice, H5_PARAM_NOISE_TONE, 0);
     h5_trigger(ctx, instrument);
     noisy = render(ctx, frames);
 
@@ -1601,6 +1601,113 @@ static int metallic_balance(h5_voice voice, h5_instrument instrument)
 
     free(metallic);
     free(noisy);
+    h5_destroy_context(ctx);
+    return 0;
+}
+
+/* The Bell/Cymbal control is the balance between the metallic bank and the
+ * noise component. */
+static int metallic_bell_cymbal(h5_voice voice, h5_instrument instrument)
+{
+    h5_context ctx = h5_create_context(TEST_RATE);
+    const size_t frames = frames_for_ms(TEST_RATE, 300u);
+    int16_t *bell;
+    int16_t *cymbal;
+    int differs;
+    int32_t bell_peak;
+    int32_t cymbal_peak;
+
+    if (ctx == 0) {
+        fail("could not create a context");
+        return -1;
+    }
+
+    h5_reset(ctx);
+    set_metallic(ctx, voice, H5_PARAM_BELL_CYMBAL, H5_Q16_ONE);
+    set_metallic(ctx, voice, H5_PARAM_NOISE_TONE, 0);
+    h5_trigger(ctx, instrument);
+    bell = render(ctx, frames);
+
+    h5_reset(ctx);
+    set_metallic(ctx, voice, H5_PARAM_BELL_CYMBAL, 0);
+    set_metallic(ctx, voice, H5_PARAM_NOISE_TONE, 0);
+    h5_trigger(ctx, instrument);
+    cymbal = render(ctx, frames);
+
+    if (bell == 0 || cymbal == 0) {
+        fail("out of memory");
+        free(bell);
+        free(cymbal);
+        h5_destroy_context(ctx);
+        return -1;
+    }
+
+    differs = memcmp(bell, cymbal, frames * 2u * sizeof(int16_t)) != 0;
+    bell_peak = peak_abs(bell, 0u, frames);
+    cymbal_peak = peak_abs(cymbal, 0u, frames);
+
+    if (!differs) {
+        fail("the Bell/Cymbal control does not change the balance");
+    } else if (bell_peak < 1000 || cymbal_peak < 1000) {
+        fail("an end of the Bell/Cymbal range is silent");
+    } else {
+        ok("the Bell/Cymbal control changes the metallic balance");
+    }
+
+    free(bell);
+    free(cymbal);
+    h5_destroy_context(ctx);
+    return 0;
+}
+
+/* The Bend control sweeps the bank of the metallic voices. */
+static int metallic_bend(h5_voice voice, h5_instrument instrument)
+{
+    h5_context ctx = h5_create_context(TEST_RATE);
+    const size_t frames = frames_for_ms(TEST_RATE, 300u);
+    int16_t *flat;
+    int16_t *bent;
+    int differs;
+    int32_t flat_peak;
+    int32_t bent_peak;
+
+    if (ctx == 0) {
+        fail("could not create a context");
+        return -1;
+    }
+
+    h5_reset(ctx);
+    set_metallic(ctx, voice, H5_PARAM_BEND, 0);
+    h5_trigger(ctx, instrument);
+    flat = render(ctx, frames);
+
+    h5_reset(ctx);
+    set_metallic(ctx, voice, H5_PARAM_BEND, 12 * H5_Q16_ONE);
+    h5_trigger(ctx, instrument);
+    bent = render(ctx, frames);
+
+    if (flat == 0 || bent == 0) {
+        fail("out of memory");
+        free(flat);
+        free(bent);
+        h5_destroy_context(ctx);
+        return -1;
+    }
+
+    differs = memcmp(flat, bent, frames * 2u * sizeof(int16_t)) != 0;
+    flat_peak = peak_abs(flat, 0u, frames);
+    bent_peak = peak_abs(bent, 0u, frames);
+
+    if (!differs) {
+        fail("the Bend control does not sweep the metallic bank");
+    } else if (flat_peak < 1000 || bent_peak < 1000) {
+        fail("an end of the Bend range is silent");
+    } else {
+        ok("the Bend control sweeps the metallic bank");
+    }
+
+    free(flat);
+    free(bent);
     h5_destroy_context(ctx);
     return 0;
 }
@@ -1673,6 +1780,12 @@ int command_hihat(void)
     if (metallic_balance(H5_VOICE_HIHAT, H5_INSTR_HIHAT_CLOSED) != 0) {
         result = -1;
     }
+    if (metallic_bell_cymbal(H5_VOICE_HIHAT, H5_INSTR_HIHAT_CLOSED) != 0) {
+        result = -1;
+    }
+    if (metallic_bend(H5_VOICE_HIHAT, H5_INSTR_HIHAT_CLOSED) != 0) {
+        result = -1;
+    }
     if (command_hihat_open_close() != 0) {
         result = -1;
     }
@@ -1697,6 +1810,12 @@ int command_cymbal(void)
         result = -1;
     }
     if (metallic_balance(H5_VOICE_CYMBAL, H5_INSTR_CYMBAL) != 0) {
+        result = -1;
+    }
+    if (metallic_bell_cymbal(H5_VOICE_CYMBAL, H5_INSTR_CYMBAL) != 0) {
+        result = -1;
+    }
+    if (metallic_bend(H5_VOICE_CYMBAL, H5_INSTR_CYMBAL) != 0) {
         result = -1;
     }
     return result;

@@ -407,6 +407,45 @@ static int command_api(void)
         }
     }
 
+    /* The metallic voices have their own faceplate: Sweep, Tone Pitch,
+     * Bend, Decay, Noise/Tone and Bell/Cymbal. The drum controls Noise
+     * and Click/Drum are not part of it. */
+    {
+        static const h5_voice metallic_voices[] = {
+            H5_VOICE_CYMBAL, H5_VOICE_HIHAT
+        };
+        static const h5_param metallic_faceplate[] = {
+            H5_PARAM_SWEEP, H5_PARAM_TONE_PITCH, H5_PARAM_BEND,
+            H5_PARAM_DECAY, H5_PARAM_NOISE_TONE, H5_PARAM_BELL_CYMBAL
+        };
+        size_t vi;
+        size_t pi;
+        int missing = 0;
+
+        for (vi = 0u; vi < sizeof(metallic_voices) / sizeof(metallic_voices[0]);
+            vi++) {
+            for (pi = 0u;
+                pi < sizeof(metallic_faceplate) / sizeof(metallic_faceplate[0]);
+                pi++) {
+                if (!metallic_param_supported(metallic_voices[vi],
+                        metallic_faceplate[pi])) {
+                    missing++;
+                }
+            }
+            if (metallic_param_supported(metallic_voices[vi],
+                    H5_PARAM_NOISE_PITCH) ||
+                metallic_param_supported(metallic_voices[vi],
+                    H5_PARAM_CLICK_TONE)) {
+                missing++;
+            }
+        }
+        if (missing != 0) {
+            fail("a metallic voice does not expose its own faceplate");
+        } else {
+            ok("the metallic voices expose their own six faceplate controls");
+        }
+    }
+
     /* Mixer set/get round trip and defaults. */
     status = h5_set_instrument_volume((h5_context)ctx, H5_INSTR_KICK,
         H5_Q16_ONE);

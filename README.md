@@ -39,26 +39,12 @@ size; everything else stays at `-Os`.
 
 ## Build options
 
-The metallic engine is optional and gated by preprocessor macros. The
-Hi-hat and the Cymbal are compiled in by default. Each is gated behind its
-own macro, both passed via `-D` in `ENGINE_DEFS` in the Makefile:
-`LIBHIVE_ENGINE_HIHAT` and `LIBHIVE_ENGINE_CYMBAL`. Override the flags to
-trim the build:
-
-```sh
-make ENGINE_DEFS=-DLIBHIVE_ENGINE_HIHAT   # no Cymbal
-make ENGINE_DEFS=                         # neither metallic voice
-```
-
-A disabled voice stays in the public API but renders silence and accepts
-no parameters. The same definitions are passed to the test harness, which
-skips the stages of the engines that are not compiled in.
-
-`LIBHIVE_XTRA_PRECISION` keeps one DSP stage whose effect is below
-masking in the mix: the Snare's second drive harmonic (about 40 dB below
-the fundamental). The Makefile never defines it; add
-`-DLIBHIVE_XTRA_PRECISION` to `CFLAGS` by hand to enable it, e.g.
-`make CFLAGS=-DLIBHIVE_XTRA_PRECISION`.
+The metallic engine is optional and gated by preprocessor macros. Undefine
+`LIBHIVE_ENGINE_HIHAT` or `LIBHIVE_ENGINE_CYMBAL` to remove each of the
+instruments using the metallic engine. A disabled voice stays in the public
+API but renders silence and accepts no parameters. The same definitions are
+passed to the test harness, which skips the stages of the engines that are
+not compiled in.
 
 ## Usage
 
@@ -139,19 +125,11 @@ instruments:
 | `H5_INSTR_TOM_1` / `H5_INSTR_TOM_2` / `H5_INSTR_TOM_3` | Tom 1 / Tom 2 / Tom 3 | |
 | `H5_INSTR_CYMBAL` | Cymbal | |
 | `H5_INSTR_HIHAT_CLOSED` | Hi-hat | release as set |
-| `H5_INSTR_HIHAT_OPEN` | Hi-hat | release four times longer |
+| `H5_INSTR_HIHAT_OPEN` | Hi-hat | a second longer release |
 
 Triggering the closed instrument while an open hat is sounding restarts the
 shared voice, which chokes it. Both Hi-hat instruments share the Hi-hat
 voice, its parameters and its mixer values.
-
-The metallic voices (Hi-hat, Cymbal) map the common controls onto their
-own circuits: `H5_PARAM_NOISE_PITCH` is the output low-pass cutoff
-(900..16000 Hz), `H5_PARAM_TONE_PITCH` scales the ten-oscillator metallic
-bank (0..1, not Hz), `H5_PARAM_NOISE_TONE` balances the bank against LCG
-noise, `H5_PARAM_DECAY` is the release time in seconds, and
-`H5_PARAM_CLICK_TONE` is the attack time in seconds. `H5_PARAM_BEND` is not
-a control on the metallic voices and is reported unsupported.
 
 ## Parameters
 
@@ -160,12 +138,14 @@ signed semitones for bend, and a 0..1 scalar for balance controls.
 
 | Parameter | Applies to |
 | --- | --- |
-| `H5_PARAM_NOISE_PITCH` | All voices |
+| `H5_PARAM_NOISE_PITCH` | Kick, Snare, Toms |
 | `H5_PARAM_TONE_PITCH` | All voices |
-| `H5_PARAM_BEND` | Kick, Snare, Toms |
+| `H5_PARAM_BEND` | All voices |
 | `H5_PARAM_DECAY` | All voices |
 | `H5_PARAM_NOISE_TONE` | All voices |
-| `H5_PARAM_CLICK_TONE` | All voices |
+| `H5_PARAM_CLICK_TONE` | Kick, Snare, Toms |
+| `H5_PARAM_SWEEP` | Cymbal, Hi-hat |
+| `H5_PARAM_BELL_CYMBAL` | Cymbal, Hi-hat |
 | `H5_PARAM_VOLUME` | All voices (mixer level) |
 | `H5_PARAM_PAN` | All voices (mixer pan) |
 | `H5_PARAM_SENSITIVITY` | All voices (strike sensitivity) |

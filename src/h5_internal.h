@@ -388,22 +388,31 @@ struct h5_snare_s {
 };
 
 /* Metallic voice runtime state, shared by the Cymbal and the Hi-hat. The
- * two differ only in the filter-envelope depth, the output defaults and
- * (for the Hi-hat) the open/closed trigger variants. */
+ * engine keeps its own copies of the parameters it needs per sample so the
+ * audio path never reads the parameter matrix. */
 struct h5_metallic_s {
     struct h5_engine_s head;
-    struct h5_velocity_s vel;   /* only the linear level is used */
-    struct h5_env_s env;        /* AR: Click attack, Decay release */
+    struct h5_velocity_s vel;   /* only the strike level is used */
+    struct h5_env_s env_metal;  /* AR: the metal envelope */
+    struct h5_env_s env_noise;  /* AR: the noise envelope */
     struct h5_noise_s noise;
-    struct h5_svf_s out_filter; /* swept low-pass */
-    struct h5_sweep_s out_sweep; /* coefficients for out_filter */
+    struct h5_svf_s noise_filter;  /* the first low-pass of the noise path */
+    struct h5_svf_s noise_filter2; /* the second low-pass of the noise path */
+    struct h5_sweep_s noise_sweep; /* its coefficients over the sweep range */
     uint32_t phase[H5_METALLIC_BANK];  /* 28-bit phases */
-    int32_t inc[H5_METALLIC_BANK];     /* phase increments at Pitch scale */
-    int32_t noise_tone_q16;     /* noise weight in the mix (0..1) */
-    int32_t noise_pitch_q16;   /* output filter base cutoff, Hz Q16 */
-    int32_t filter_bend_q16;    /* filter sweep depth (Hi-hat 0.0, Cymbal 0.7) */
-    int32_t click_q16;          /* attack time, seconds Q16 */
-    int32_t decay_q16;          /* release time, seconds Q16 */
+    int32_t inc[H5_METALLIC_BANK];     /* phase increments, bend included */
+    int32_t base_inc[H5_METALLIC_BANK]; /* phase increments without the bend */
+    int32_t metal_gain_q16;   /* the Bell/Cymbal balance */
+    int32_t noise_gain_q16;   /* the Noise/Tone balance and the noise weight */
+    int32_t filter_freq_q16;  /* the noise filter's base cutoff, Hz Q16 */
+    int32_t sweep_q16;        /* the filter contour depth, signed Q16 */
+    int32_t bend_q16;         /* the pitch sweep of the bank, semitones Q16 */
+    int32_t drive_q16;        /* the saturation blend */
+    int32_t decay_q16;        /* the release time, seconds Q16 */
+    int32_t hp_k_q30;         /* the noise high-pass coefficient */
+    int32_t hp_state;         /* the noise high-pass state, Q31 */
+    int32_t hp_state2;        /* the second noise high-pass state, Q31 */
+    int32_t open_q16;         /* the Open amount, seconds Q16 */
     uint8_t open;               /* Hi-hat: the hit was triggered open */
     uint8_t has_open;           /* Hi-hat only; 0 for the Cymbal */
 };

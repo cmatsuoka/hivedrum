@@ -34,6 +34,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = { 0,      Q,        Q / 2 },
         [H5_PARAM_PAN]         = { 0,      Q,        Q / 2 },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
+        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
     },
     [H5_VOICE_SNARE] = {
         [H5_PARAM_NOISE_PITCH] = { I(900), I(14000), 581042176 },
@@ -45,6 +46,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = { 0,      Q,        38666 },
         [H5_PARAM_PAN]         = { 0,      Q,        32768 },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
+        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
     },
     [H5_VOICE_TOM_1] = {
         [H5_PARAM_NOISE_PITCH] = { I(900), I(16000), I(8377) },
@@ -56,6 +58,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = { 0,      Q,        Q / 2 },
         [H5_PARAM_PAN]         = { 0,      Q,        F(3, 5) },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
+        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
     },
     [H5_VOICE_TOM_2] = {
         [H5_PARAM_NOISE_PITCH] = { I(900), I(16000), I(8398) },
@@ -67,6 +70,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = { 0,      Q,        Q / 2 },
         [H5_PARAM_PAN]         = { 0,      Q,        Q / 2 },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
+        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
     },
     [H5_VOICE_TOM_3] = {
         [H5_PARAM_NOISE_PITCH] = { I(900), I(16000), I(8419) },
@@ -78,6 +82,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = { 0,      Q,        Q / 2 },
         [H5_PARAM_PAN]         = { 0,      Q,        F(2, 5) },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
+        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
     },
     /* The metallic voices have their own faceplate: Sweep, Tone Pitch,
      * Bend, Decay, Noise/Tone and Bell/Cymbal. NOISE_PITCH and CLICK_TONE
@@ -97,6 +102,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = { 0,      Q,        Q / 2 },
         [H5_PARAM_PAN]         = { 0,      Q,        Q / 2 },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
+        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
     },
 #else
     [H5_VOICE_CYMBAL] = {
@@ -111,6 +117,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = OFF,
         [H5_PARAM_PAN]         = OFF,
         [H5_PARAM_SENSITIVITY] = OFF,
+        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
     },
 #endif
 #ifdef LIBHIVE_ENGINE_HIHAT
@@ -126,6 +133,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = { 0,      Q,        F(49, 100) },
         [H5_PARAM_PAN]         = { 0,      Q,        Q / 2 },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
+        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
     },
 #else
     [H5_VOICE_HIHAT] = {
@@ -140,6 +148,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = OFF,
         [H5_PARAM_PAN]         = OFF,
         [H5_PARAM_SENSITIVITY] = OFF,
+        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
     },
 #endif
 };
@@ -178,7 +187,8 @@ h5_status h5_set_param(h5_context handle, h5_voice voice, h5_param param,
     }
 
     ctx->voice_params[voice][param] = clamped;
-    if (param == H5_PARAM_VOLUME || param == H5_PARAM_PAN) {
+    if (param == H5_PARAM_VOLUME || param == H5_PARAM_PAN
+        || param == H5_PARAM_FX_SEND) {
         h5_mix_update(ctx, voice);
     } else {
         h5_voice_configure(ctx, voice);

@@ -29,5 +29,6 @@ int command_hihat(void);
 int command_cymbal(void);
 int command_mixer(void);
 int command_velocity(void);
+int command_fx(void);
 
 #endif /* TESTS_H */

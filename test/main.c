@@ -16,6 +16,7 @@
  *   --mixer             verify volume, pan and the stereo output stage
  *   --velocity          verify the velocity response and the sensitivity
  *                       control
+ *   --fx                verify the shared reverb and noise gate
  *   --help              this text
  *
  * Exit status is 0 when every check passed, 1 otherwise.
@@ -83,6 +84,8 @@ static int command_init(void)
 
     printf("context size        : %lu bytes\n",
         (unsigned long)sizeof(struct h5_context_s));
+    printf("fx delay block      : %lu bytes\n",
+        (unsigned long)ctx->fx.block_size);
     printf("default sample rate : %u Hz\n", (unsigned)H5_DEFAULT_SAMPLE_RATE);
 
     if (ctx->sample_rate != H5_DEFAULT_SAMPLE_RATE) {
@@ -720,6 +723,7 @@ static void usage(const char *program)
         "  --cymbal           render a Cymbal hit and verify its controls\n"
         "  --mixer            verify volume, pan and the stereo output stage\n"
         "  --velocity         verify the velocity response and sensitivity\n"
+        "  --fx               verify the reverb and noise gate\n"
         "  --help             this text\n");
 }
 
@@ -772,6 +776,9 @@ int main(int argc, char **argv)
 
     if (strcmp(command, "--velocity") == 0) {
         return command_velocity();
+    }
+    if (strcmp(command, "--fx") == 0) {
+        return command_fx();
     }
     if (strcmp(command, "--help") == 0 || strcmp(command, "-h") == 0) {
         usage(argv[0]);

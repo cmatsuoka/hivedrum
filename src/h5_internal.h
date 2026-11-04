@@ -69,6 +69,9 @@ struct h5_param_info {
 /* Single source of truth for parameter ranges, defaults and support. */
 extern const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT];
 
+/* Single source of truth for the FX bus parameter ranges and defaults. */
+extern const struct h5_param_info h5_fx_param_table[H5_FX_PARAM_COUNT];
+
 /* First quadrant of the sine, Q15, for i = 0..256. This is the only sine
  * data stored in the image; every other entry is derived from it. */
 extern const int16_t h5_sine_quad1[H5_SINE_QUAD_SIZE];
@@ -418,6 +421,60 @@ struct h5_metallic_s {
     uint8_t has_open;           /* Hi-hat only; 0 for the Cymbal */
 };
 
+/* One reverb comb line. The delay line lives inside the single FX block. */
+#define H5_FX_COMBS 8
+#define H5_FX_ALLPASSES 4
+
+struct h5_comb_s {
+    int16_t *line;   /* into fx.block */
+    uint32_t alloc;  /* allocated length in samples (fixed at 48 kHz) */
+    uint32_t pos;    /* write position, wraps at alloc */
+    uint32_t len;    /* active delay length, set by configure */
+    int32_t lp;      /* damping one-pole state, Q31 */
+};
+
+struct h5_allpass_s {
+    int16_t *line;
+    uint32_t alloc;
+    uint32_t pos;
+    uint32_t len;    /* fixed at configure time, wraps at len */
+};
+
+/* Noise-gate states. */
+enum {
+    H5_FX_GATE_CLOSED = 0,
+    H5_FX_GATE_OPENING,
+    H5_FX_GATE_OPEN,
+    H5_FX_GATE_HOLDING,
+    H5_FX_GATE_RELEASING
+};
+
+/* The shared FX bus: one stereo reverb and one stereo-linked noise gate. */
+struct h5_fx_s {
+    int16_t *block;         /* one allocation, carved into the lines */
+    size_t block_size;      /* bytes, for teardown and diagnostics */
+    struct h5_comb_s comb[2][H5_FX_COMBS];
+    struct h5_allpass_s allpass[2][H5_FX_ALLPASSES];
+
+    int32_t damp_q16;       /* damping one-pole coefficient */
+    int32_t width_q31;      /* stereo width, Q31 */
+    int32_t wet_q31;        /* return trim after the gate, Q31 */
+    int32_t room_q16;       /* stored room size for configure() */
+
+    /* Gate. */
+    int32_t key_env;        /* pre-reverb |bus| peak follower, Q31 */
+    int32_t out_env;        /* post-gate |wet| follower, Q31 */
+    int32_t gate_gain;      /* Q31, floor..FULL */
+    int32_t floor_q31;      /* (1 - RANGE) in Q31; FULL when bypassed */
+    int32_t thr_open_q31;   /* threshold in Q31 */
+    int32_t thr_close_q31;  /* thr_open >> 1 */
+    uint32_t hold_count;    /* samples left in HOLDING */
+    uint32_t hold_samples;  /* HOLD at the current rate */
+    int32_t atk_delta;      /* gain step per sample while opening */
+    int32_t rel_delta;      /* gain step per sample while releasing */
+    uint8_t state;          /* H5_FX_GATE_* */
+};
+
 /* The concrete context behind the opaque h5_context handle. */
 struct h5_context_s {
     uint32_t sample_rate;
@@ -431,6 +488,16 @@ struct h5_context_s {
      * when Volume or Pan changes, never on the audio path. */
     int32_t mix_left[H5_VOICE_COUNT];
     int32_t mix_right[H5_VOICE_COUNT];
+
+    /* FX bus. The send gains are the mixer gains folded with H5_PARAM_FX_SEND
+     * and are cached like the dry gains. fx_any_send is 1 when at least one
+     * send gain is non-zero; the bus is bypassed otherwise. */
+    int32_t fx_send[H5_VOICE_COUNT];
+    int32_t fx_gain_left[H5_VOICE_COUNT];
+    int32_t fx_gain_right[H5_VOICE_COUNT];
+    int32_t fx_params[H5_FX_PARAM_COUNT];
+    uint8_t fx_any_send;
+    struct h5_fx_s fx;
 
     /* Bit i is set while voice i is sounding. h5_process() only visits the
      * set bits, so silent voices cost nothing beyond the trigger bookkeeping.
@@ -570,6 +637,16 @@ void h5_mix_update(struct h5_context_s *ctx, h5_voice voice);
 
 /* Recompute the cached stereo gains for every voice. */
 void h5_mix_update_all(struct h5_context_s *ctx);
+
+/* FX bus lifecycle and rendering. */
+void h5_fx_defaults(struct h5_context_s *ctx);
+int h5_fx_init(struct h5_context_s *ctx);
+void h5_fx_free(struct h5_context_s *ctx);
+void h5_fx_configure(struct h5_context_s *ctx);
+void h5_fx_clear(struct h5_context_s *ctx);
+void h5_fx_process(struct h5_context_s *ctx, int64_t in_l, int64_t in_r,
+    int32_t *out_l, int32_t *out_r);
+bool h5_fx_busy(const struct h5_context_s *ctx);
 
 /* Convert a completed 64-bit Q31 mix accumulator to Q15 with round-half-up
  * and saturation. This is the single conversion in the output stage. */

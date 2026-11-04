@@ -24,7 +24,7 @@ extern "C" {
 /* Library version. major/minor/patch are packed as 0x00MMmmpp.
  * The plain integer constants keep H5_VERSION_NUMBER usable in #if. */
 #define H5_VERSION_MAJOR 0
-#define H5_VERSION_MINOR 4
+#define H5_VERSION_MINOR 5
 #define H5_VERSION_PATCH 0
 #define H5_VERSION_NUMBER \
     ((H5_VERSION_MAJOR << 16) | (H5_VERSION_MINOR << 8) | H5_VERSION_PATCH)
@@ -107,8 +107,26 @@ typedef enum {
     H5_PARAM_VOLUME,
     H5_PARAM_PAN,
     H5_PARAM_SENSITIVITY,
+    H5_PARAM_FX_SEND,
     H5_PARAM_COUNT
 } h5_param;
+
+/* The shared FX bus parameters. The bus holds one reverb and one noise gate;
+ * a voice feeds it through H5_PARAM_FX_SEND. The bus is active exactly when
+ * at least one send is non-zero. Scalar parameters are Q16.16 in 0..1 and
+ * the time parameters are Q16.16 seconds. */
+typedef enum {
+    H5_FX_ROOM_SIZE = 0,  /* 0 -> 0.6x room, 1 -> 2.0x, linear */
+    H5_FX_DAMPING,        /* 0 -> bright tail, 1 -> dark tail */
+    H5_FX_WIDTH,          /* 1 -> full stereo, 0 -> mono */
+    H5_FX_WET,            /* return trim after the gate */
+    H5_FX_GATE_THRESHOLD, /* pre-reverb key threshold, linear amplitude */
+    H5_FX_GATE_ATTACK,    /* seconds */
+    H5_FX_GATE_HOLD,      /* seconds */
+    H5_FX_GATE_RELEASE,   /* seconds */
+    H5_FX_GATE_RANGE,     /* 1 -> full mute when closed, 0 -> gate bypass */
+    H5_FX_PARAM_COUNT
+} h5_fx_param;
 
 /* Return status for setters and getters. */
 typedef enum {
@@ -216,6 +234,31 @@ h5_status h5_get_instrument_volume(const h5_context ctx,
  * with H5_ERR_INVALID_CONTEXT. Equivalent to h5_get_param() on
  * H5_PARAM_PAN of the instrument's parameter voice. */
 h5_status h5_get_instrument_pan(const h5_context ctx,
+    h5_instrument instrument,
+    int32_t *out);
+
+/* Set a shared FX bus parameter. Out-of-range values are clamped to the
+ * documented range, the clamped value is stored, and H5_ERR_RANGE is
+ * returned. A null context is H5_ERR_INVALID_CONTEXT. */
+h5_status h5_set_fx_param(h5_context ctx, h5_fx_param param, int32_t value);
+
+/* Read back a shared FX bus parameter. A null context is
+ * H5_ERR_INVALID_CONTEXT; a null *out is H5_ERR_INVALID_PARAM. */
+h5_status h5_get_fx_param(const h5_context ctx, h5_fx_param param,
+    int32_t *out);
+
+/* Set the per-instrument FX send. Range is 0 .. H5_Q16_ONE; out-of-range
+ * values are clamped, the clamped value is stored, and H5_ERR_RANGE is
+ * returned. Equivalent to h5_set_param(ctx, voice, H5_PARAM_FX_SEND,
+ * send_q16), with the same voice mapping as h5_set_instrument_volume(). */
+h5_status h5_set_instrument_fx_send(h5_context ctx,
+    h5_instrument instrument,
+    int32_t send_q16);
+
+/* Read back the per-instrument FX send in Q16.16. A null *out is rejected
+ * with H5_ERR_INVALID_CONTEXT. Equivalent to h5_get_param() on
+ * H5_PARAM_FX_SEND of the instrument's parameter voice. */
+h5_status h5_get_instrument_fx_send(const h5_context ctx,
     h5_instrument instrument,
     int32_t *out);
 

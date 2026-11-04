@@ -70,6 +70,7 @@ HOT_SRCS := \
 	src/h5_metallic.c \
 	src/h5_filter.c \
 	src/h5_fixed.c \
+	src/h5_fx.c \
 	src/h5_noise.c \
 	src/h5_mixer.c \
 	src/h5_tables.c
@@ -135,6 +136,7 @@ check-default: $(TEST) $(EXAMPLE_OBJS)
 	./$(TEST) --cymbal
 	./$(TEST) --mixer
 	./$(TEST) --velocity
+	./$(TEST) --fx
 
 clean:
 	rm -rf $(BUILD) build-xtra $(LIB) $(TEST) libhive-xtra.a h5_test-xtra

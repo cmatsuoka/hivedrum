@@ -92,5 +92,11 @@ bool h5_is_active(const h5_context handle)
 {
     const struct h5_context_s *ctx = (const struct h5_context_s *)handle;
 
-    return ctx != 0 && ctx->active_mask != 0u;
+    if (ctx == 0) {
+        return false;
+    }
+    if (ctx->active_mask != 0u) {
+        return true;
+    }
+    return ctx->fx_any_send != 0u && h5_fx_busy(ctx);
 }

@@ -226,18 +226,9 @@ static void h5_metallic_apply(void *engine,
         ? H5_METALLIC_HIHAT_FILTER_HZ * H5_Q16_ONE
         : H5_METALLIC_CYMBAL_FILTER_HZ * H5_Q16_ONE;
     /* The cutoff of a zero sweep does not depend on the envelope, so it is
-     * computed once here instead of on every sample. */
-    {
-        int32_t fc = m->filter_freq_q16;
-
-        if (fc < H5_METALLIC_FC_MIN_HZ * H5_Q16_ONE) {
-            fc = H5_METALLIC_FC_MIN_HZ * H5_Q16_ONE;
-        }
-        if (fc > H5_METALLIC_FC_MAX_HZ * H5_Q16_ONE) {
-            fc = H5_METALLIC_FC_MAX_HZ * H5_Q16_ONE;
-        }
-        m->fc_const_q16 = fc;
-    }
+     * computed once here instead of on every sample. With a zero sweep the
+     * contour factor is exactly 1, so this is the clamped base cutoff. */
+    m->fc_const_q16 = h5_metallic_cutoff(m, 0);
 
     /* The high-pass on the noise: one pole at 25 Hz. Its coefficient is
      * 1 - exp(-2*pi*fc/sr), in Q30. */

@@ -24,6 +24,7 @@ static void h5_init_defaults(struct h5_context_s *ctx)
             ctx->voice_params[v][p] = h5_param_table[v][p].default_value;
         }
     }
+    h5_fx_defaults(ctx);
     h5_mix_update_all(ctx);
 }
 
@@ -41,12 +42,22 @@ h5_context h5_create_context(uint32_t sample_rate)
         : sample_rate;
     h5_init_defaults(ctx);
     h5_voice_setup_all(ctx);
+    if (h5_fx_init(ctx) != 0) {
+        free(ctx);
+        return 0;
+    }
     return (h5_context)ctx;
 }
 
 void h5_destroy_context(h5_context handle)
 {
-    free(handle);
+    struct h5_context_s *ctx = (struct h5_context_s *)handle;
+
+    if (ctx == 0) {
+        return;
+    }
+    h5_fx_free(ctx);
+    free(ctx);
 }
 
 void h5_set_sample_rate(h5_context handle, uint32_t sample_rate)
@@ -59,6 +70,8 @@ void h5_set_sample_rate(h5_context handle, uint32_t sample_rate)
     ctx->sample_rate = (sample_rate == 0u) ? H5_DEFAULT_SAMPLE_RATE
         : sample_rate;
     h5_voice_setup_all(ctx);
+    h5_fx_clear(ctx);
+    h5_fx_configure(ctx);
 }
 
 void h5_reset(h5_context handle)
@@ -70,6 +83,8 @@ void h5_reset(h5_context handle)
     }
     h5_init_defaults(ctx);
     h5_voice_setup_all(ctx);
+    h5_fx_clear(ctx);
+    h5_fx_configure(ctx);
 }
 
 void h5_process(h5_context handle, int16_t *stereo_out, size_t frames)
@@ -102,6 +117,8 @@ void h5_process(h5_context handle, int16_t *stereo_out, size_t frames)
     for (i = 0u; i < frames; i++) {
         int64_t left = 0;
         int64_t right = 0;
+        int64_t fx_left = 0;
+        int64_t fx_right = 0;
         h5_voice voice;
 
         /* Visit only the voices that are still sounding. Bits are cleared as
@@ -121,6 +138,16 @@ void h5_process(h5_context handle, int16_t *stereo_out, size_t frames)
                 int32_t volume;
 
                 h5_mix_add(ctx, voice, out, &left, &right);
+
+                /* The FX bus takes the voice output in the Q30 engine
+                 * domain but uses the Q16 send gain directly; the reverb's
+                 * input gain normalises the bus, so the dry path's doubling
+                 * is intentionally not applied here. */
+                if ((ctx->fx_gain_left[voice] | ctx->fx_gain_right[voice])
+                    != 0) {
+                    fx_left += h5_mul_q16(out, ctx->fx_gain_left[voice]);
+                    fx_right += h5_mul_q16(out, ctx->fx_gain_right[voice]);
+                }
 
                 volume = ctx->voice_params[voice][H5_PARAM_VOLUME];
                 level = (int64_t)out * (int64_t)volume;
@@ -146,10 +173,20 @@ void h5_process(h5_context handle, int16_t *stereo_out, size_t frames)
             }
         }
 
+        if (ctx->fx_any_send) {
+            int32_t wet_l;
+            int32_t wet_r;
+
+            h5_fx_process(ctx, fx_left, fx_right, &wet_l, &wet_r);
+            left += wet_l;
+            right += wet_r;
+        }
+
         stereo_out[2u * i] = h5_mix_to_q15(left);
         stereo_out[2u * i + 1u] = h5_mix_to_q15(right);
 
-        if (ctx->active_mask == 0u) {
+        if (ctx->active_mask == 0u
+            && !(ctx->fx_any_send && h5_fx_busy(ctx))) {
             size_t remaining = frames - i - 1u;
 
             if (remaining > 0u) {

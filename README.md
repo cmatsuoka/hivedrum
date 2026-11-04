@@ -1,14 +1,18 @@
 # Libhive
 
-Libhive is a small, dependency-free C library that synthesizes a five-voice
-percussion kit: Kick, Snare and three Toms. It renders a stereo mix into a
-caller-supplied buffer and performs no I/O. All DSP is integer fixed-point,
-the library contains no floating-point code.
+Libhive is a small, dependency-free C library that synthesizes a seven-voice
+percussion kit: Kick, Snare, three Toms, Cymbal and Hi-hat. It renders a
+stereo mix into a caller-supplied buffer and performs no I/O. All DSP is
+integer fixed-point, the library contains no floating-point code.
 
 ## Features
 
-- Five simultaneously playable voices built from three engine types (Kick,
-  Snare, Toms 1/2/3).
+- Seven simultaneously playable voices built from four engine types (Kick,
+  Snare, Toms 1/2/3 and the metallic engine, which serves the Cymbal and the
+  Hi-hat). The Hi-hat is one voice reachable through two instruments, closed
+  and open.
+- Each metallic voice (Hi-hat, Cymbal) is built from a ten-oscillator
+  square bank, a swept resonant low-pass and a soft-clip stage.
 - Per-instrument volume and pan.
 - Per-voice sound parameters, exposed in physical units.
 - Deterministic integer DSP: 28-bit phase sine, state-variable filters,
@@ -35,14 +39,26 @@ size; everything else stays at `-Os`.
 
 ## Build options
 
-`make XTRA_PRECISION=1` defines `LIBHIVE_XTRA_PRECISION` and builds
-`libhive-xtra.a` / `h5_test-xtra` under `build-xtra/`. The macro keeps one
-DSP stage whose effect is below masking in the mix: the Snare's second
-drive harmonic (about 40 dB below the fundamental; the two builds' renders
-differ by at most ~66 LSB, about -46 dB RMS including the mix). The
-default build omits it to keep the per-sample path a little cheaper; leave
-the macro undefined for normal use. `make check` builds and runs the test
-harness against both variants.
+The metallic engine is optional and gated by preprocessor macros. The
+Hi-hat and the Cymbal are compiled in by default. Each is gated behind its
+own macro, both passed via `-D` in `ENGINE_DEFS` in the Makefile:
+`LIBHIVE_ENGINE_HIHAT` and `LIBHIVE_ENGINE_CYMBAL`. Override the flags to
+trim the build:
+
+```sh
+make ENGINE_DEFS=-DLIBHIVE_ENGINE_HIHAT   # no Cymbal
+make ENGINE_DEFS=                         # neither metallic voice
+```
+
+A disabled voice stays in the public API but renders silence and accepts
+no parameters. The same definitions are passed to the test harness, which
+skips the stages of the engines that are not compiled in.
+
+`LIBHIVE_XTRA_PRECISION` keeps one DSP stage whose effect is below
+masking in the mix: the Snare's second drive harmonic (about 40 dB below
+the fundamental). The Makefile never defines it; add
+`-DLIBHIVE_XTRA_PRECISION` to `CFLAGS` by hand to enable it, e.g.
+`make CFLAGS=-DLIBHIVE_XTRA_PRECISION`.
 
 ## Usage
 
@@ -110,6 +126,33 @@ separate master limiter.
 The library is not thread-safe: rendering, setters and context creation or
 destruction must not run concurrently.
 
+## Voices and trigger targets
+
+The kit has seven voices and eight trigger targets. The Tom engine is
+instantiated three times; the Hi-hat is one voice reachable through two
+instruments:
+
+| Instrument | Voice | Character |
+| --- | --- | --- |
+| `H5_INSTR_KICK` | Kick | |
+| `H5_INSTR_SNARE` | Snare | |
+| `H5_INSTR_TOM_1` / `H5_INSTR_TOM_2` / `H5_INSTR_TOM_3` | Tom 1 / Tom 2 / Tom 3 | |
+| `H5_INSTR_CYMBAL` | Cymbal | |
+| `H5_INSTR_HIHAT_CLOSED` | Hi-hat | release as set |
+| `H5_INSTR_HIHAT_OPEN` | Hi-hat | release four times longer |
+
+Triggering the closed instrument while an open hat is sounding restarts the
+shared voice, which chokes it. Both Hi-hat instruments share the Hi-hat
+voice, its parameters and its mixer values.
+
+The metallic voices (Hi-hat, Cymbal) map the common controls onto their
+own circuits: `H5_PARAM_NOISE_PITCH` is the output low-pass cutoff
+(900..16000 Hz), `H5_PARAM_TONE_PITCH` scales the ten-oscillator metallic
+bank (0..1, not Hz), `H5_PARAM_NOISE_TONE` balances the bank against LCG
+noise, `H5_PARAM_DECAY` is the release time in seconds, and
+`H5_PARAM_CLICK_TONE` is the attack time in seconds. `H5_PARAM_BEND` is not
+a control on the metallic voices and is reported unsupported.
+
 ## Parameters
 
 Values are Q16.16 physical units: Hz for pitch and cutoff, seconds for decay,
@@ -119,7 +162,7 @@ signed semitones for bend, and a 0..1 scalar for balance controls.
 | --- | --- |
 | `H5_PARAM_NOISE_PITCH` | All voices |
 | `H5_PARAM_TONE_PITCH` | All voices |
-| `H5_PARAM_BEND` | All voices |
+| `H5_PARAM_BEND` | Kick, Snare, Toms |
 | `H5_PARAM_DECAY` | All voices |
 | `H5_PARAM_NOISE_TONE` | All voices |
 | `H5_PARAM_CLICK_TONE` | All voices |
@@ -130,7 +173,8 @@ signed semitones for bend, and a 0..1 scalar for balance controls.
 Use `h5_param_supported()` to test a specific voice/parameter pair rather than
 hard-coding this matrix. Volume and Pan are ordinary parameters: they can be
 set and read with `h5_set_param()` / `h5_get_param()`, and `h5_reset()`
-restores their defaults from the same table.
+restores their defaults from the same table. A metallic voice whose engine is
+not compiled in supports no parameter at all.
 
 ## Velocity
 
@@ -143,9 +187,10 @@ ignored and every hit sounds at full strike level.
 
 ## Tests
 
-`make check` runs the harness twice: once against the default `libhive.a`
-and once against the `LIBHIVE_XTRA_PRECISION` build (`build-xtra/`). The
-stages cover initialization, sine and DSP primitives, silence, the public
-API, per-engine sound checks for Kick, Tom and Snare, and the mixer and
-output stage. It also renders `build/silence.wav`, `build/kick.wav`,
-`build/tom.wav`, `build/snare.wav` and `build/mix.wav` for listening.
+`make check` runs the harness against `libhive.a`. The stages cover
+initialization, sine and DSP primitives, silence, the public API,
+per-engine sound checks for Kick, Tom, Snare, Hi-hat and Cymbal, and the
+mixer and output stage. It also renders `build/silence.wav`,
+`build/kick.wav`, `build/tom.wav`, `build/snare.wav`, `build/hihat.wav`,
+`build/cymbal.wav` and `build/mix.wav` for listening. The Hi-hat and Cymbal
+stages are skipped when their engine is not compiled in.

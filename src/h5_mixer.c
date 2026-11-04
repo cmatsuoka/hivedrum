@@ -1,9 +1,9 @@
 /*
- * h5_mixer.c - per-instrument volume/pan and stereo output conversion.
+ * h5_mixer.c - per-voice volume/pan and stereo output conversion.
  *
  * Each voice produces a mono Q30 sample (1.0 = 1 << 30; the engines keep one
  * headroom bit for the soft-clip shaper's overshoot, so hot values may
- * exceed 1.0). The per-instrument stereo gains (volume folded with pan) are
+ * exceed 1.0). The per-voice stereo gains (volume folded with pan) are
  * computed when the controls change, so the mixer only scales each voice once
  * per channel, converts to the Q31 accumulator domain by doubling, adds the
  * contribution to the two 64-bit channel accumulators, and converts the
@@ -30,11 +30,11 @@ void h5_mix_update_all(struct h5_context_s *ctx)
     }
 }
 
-void h5_mix_add(const struct h5_context_s *ctx, h5_instrument instrument,
+void h5_mix_add(const struct h5_context_s *ctx, h5_voice voice,
     int32_t voice_out, int64_t *left, int64_t *right)
 {
-    *left += (int64_t)h5_mul_q16(voice_out, ctx->mix_left[instrument]) * 2;
-    *right += (int64_t)h5_mul_q16(voice_out, ctx->mix_right[instrument]) * 2;
+    *left += (int64_t)h5_mul_q16(voice_out, ctx->mix_left[voice]) * 2;
+    *right += (int64_t)h5_mul_q16(voice_out, ctx->mix_right[voice]) * 2;
 }
 
 int16_t h5_mix_to_q15(int64_t sum)

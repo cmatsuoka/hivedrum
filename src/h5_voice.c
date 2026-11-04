@@ -1,8 +1,10 @@
 /*
  * h5_voice.c - per-voice lifecycle and dispatch.
  *
- * Each public voice maps to one of the three engine types. The Tom engine is
- * instantiated three times, so the Tom voices keep independent state.
+ * The public voices map to the engine types, and each engine instance owns
+ * its state. The Tom engine is instantiated three times, so the Tom voices
+ * keep independent state. The Hi-hat is one voice reached through two
+ * instruments (closed and open); the instrument-to-voice map lives here.
  *
  * The voice-to-engine map lives in one table: every voice names the engine
  * operation set it runs and where its engine state sits inside the context.
@@ -22,17 +24,22 @@ const struct h5_voice_slot h5_voice_slots[H5_VOICE_COUNT] = {
     { &h5_snare_ops, offsetof(struct h5_context_s, snare) },
     { &h5_tom_ops, offsetof(struct h5_context_s, tom[0]) },
     { &h5_tom_ops, offsetof(struct h5_context_s, tom[1]) },
-    { &h5_tom_ops, offsetof(struct h5_context_s, tom[2]) }
+    { &h5_tom_ops, offsetof(struct h5_context_s, tom[2]) },
+    { &h5_cymbal_ops, offsetof(struct h5_context_s, cymbal) },
+    { &h5_hihat_ops, offsetof(struct h5_context_s, hihat) }
 };
 
 void h5_voice_setup_all(struct h5_context_s *ctx)
 {
     h5_voice voice;
+    h5_instrument instrument;
 
     /* Setting every voice up resets it, so no voice is sounding any more. */
     ctx->active_mask = 0u;
+    for (instrument = 0; instrument < H5_INSTR_COUNT; instrument++) {
+        ctx->voice_level[instrument] = 0;
+    }
     for (voice = 0; voice < H5_VOICE_COUNT; voice++) {
-        ctx->voice_level[voice] = 0;
         h5_voice_slots[voice].ops->setup(h5_voice_engine(ctx, voice), voice,
             ctx->voice_params[voice], ctx->sample_rate);
     }
@@ -64,33 +71,21 @@ int32_t h5_voice_strike_level(const struct h5_context_s *ctx, h5_voice voice,
         + h5_scale_q16(sensitivity, level));
 }
 
-void h5_voice_trigger(struct h5_context_s *ctx, h5_voice voice)
+void h5_voice_trigger_instrument_velocity(struct h5_context_s *ctx,
+    h5_instrument instrument, uint32_t velocity)
 {
-    if ((unsigned)voice >= (unsigned)H5_VOICE_COUNT) {
+    h5_voice voice;
+    uint32_t variant;
+
+    if ((unsigned)instrument >= (unsigned)H5_INSTR_COUNT) {
         return;
     }
+    voice = h5_voice_from_instrument(instrument);
+    variant = h5_instrument_is_open(instrument) ? 1u : 0u;
     h5_voice_slots[voice].ops->trigger(h5_voice_engine(ctx, voice),
-        h5_voice_strike_level(ctx, voice, 127u), ctx->sample_rate);
+        h5_voice_strike_level(ctx, voice, velocity), ctx->sample_rate,
+        variant);
     ctx->active_mask |= (uint32_t)1u << (unsigned)voice;
-}
-
-void h5_voice_trigger_velocity(struct h5_context_s *ctx, h5_voice voice,
-    uint32_t velocity)
-{
-    if ((unsigned)voice >= (unsigned)H5_VOICE_COUNT) {
-        return;
-    }
-    h5_voice_slots[voice].ops->trigger(h5_voice_engine(ctx, voice),
-        h5_voice_strike_level(ctx, voice, velocity), ctx->sample_rate);
-    ctx->active_mask |= (uint32_t)1u << (unsigned)voice;
-}
-
-void h5_voice_trigger_instrument(struct h5_context_s *ctx,
-    h5_instrument instrument)
-{
-    /* The instrument and voice enums share their order (checked at compile
-     * time), so the mapping is a cast. */
-    h5_voice_trigger(ctx, (h5_voice)instrument);
 }
 
 bool h5_is_active(const h5_context handle)

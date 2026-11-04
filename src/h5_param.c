@@ -17,6 +17,9 @@
 /* Helper for fractional physical values using round-half-up. */
 #define F(num, den) ((int32_t)(((int64_t)(num) * Q + ((den) / 2u)) / (den)))
 
+/* All parameters of a disabled engine: unsupported and unclamped. */
+#define OFF { H5_PARAM_UNSUPPORTED, H5_PARAM_UNSUPPORTED, H5_PARAM_UNSUPPORTED }
+
 const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
     /* Factory sound defaults: each voice loads its stock tuning, so the
      * instrument sounds right with no host interaction. */
@@ -76,6 +79,60 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_PAN]         = { 0,      Q,        F(2, 5) },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
     },
+    /* The metallic voices: TONE_PITCH scales the metallic bank (0..1)
+     * rather than a single frequency, so its range is 0..1. NOISE_PITCH is
+     * the output low-pass cutoff. Bend is not a control on either voice:
+     * the engine has no pitch sweep. Defaults follow the shipped preset. */
+#ifdef LIBHIVE_ENGINE_CYMBAL
+    [H5_VOICE_CYMBAL] = {
+        [H5_PARAM_NOISE_PITCH] = { I(900), I(16000), I(9547) },
+        [H5_PARAM_TONE_PITCH]  = { 0,      Q,        F(7, 10) },
+        [H5_PARAM_BEND]        = OFF,
+        [H5_PARAM_DECAY]       = { F(1, 10), F(3, 1), I(3) },
+        [H5_PARAM_NOISE_TONE]  = { 0,      Q,        F(69, 100) },
+        [H5_PARAM_CLICK_TONE]  = { 0,      Q,        F(14, 100) },
+        [H5_PARAM_VOLUME]      = { 0,      Q,        Q / 2 },
+        [H5_PARAM_PAN]         = { 0,      Q,        Q / 2 },
+        [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
+    },
+#else
+    [H5_VOICE_CYMBAL] = {
+        [H5_PARAM_NOISE_PITCH] = OFF,
+        [H5_PARAM_TONE_PITCH]  = OFF,
+        [H5_PARAM_BEND]        = OFF,
+        [H5_PARAM_DECAY]       = OFF,
+        [H5_PARAM_NOISE_TONE]  = OFF,
+        [H5_PARAM_CLICK_TONE]  = OFF,
+        [H5_PARAM_VOLUME]      = OFF,
+        [H5_PARAM_PAN]         = OFF,
+        [H5_PARAM_SENSITIVITY] = OFF,
+    },
+#endif
+#ifdef LIBHIVE_ENGINE_HIHAT
+    [H5_VOICE_HIHAT] = {
+        [H5_PARAM_NOISE_PITCH] = { I(900), I(16000), I(16000) },
+        [H5_PARAM_TONE_PITCH]  = { 0,      Q,        Q },
+        [H5_PARAM_BEND]        = OFF,
+        [H5_PARAM_DECAY]       = { F(1, 10), F(3, 1), F(28, 100) },
+        [H5_PARAM_NOISE_TONE]  = { 0,      Q,        F(11, 100) },
+        [H5_PARAM_CLICK_TONE]  = { 0,      Q,        F(9, 100) },
+        [H5_PARAM_VOLUME]      = { 0,      Q,        F(49, 100) },
+        [H5_PARAM_PAN]         = { 0,      Q,        Q / 2 },
+        [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
+    },
+#else
+    [H5_VOICE_HIHAT] = {
+        [H5_PARAM_NOISE_PITCH] = OFF,
+        [H5_PARAM_TONE_PITCH]  = OFF,
+        [H5_PARAM_BEND]        = OFF,
+        [H5_PARAM_DECAY]       = OFF,
+        [H5_PARAM_NOISE_TONE]  = OFF,
+        [H5_PARAM_CLICK_TONE]  = OFF,
+        [H5_PARAM_VOLUME]      = OFF,
+        [H5_PARAM_PAN]         = OFF,
+        [H5_PARAM_SENSITIVITY] = OFF,
+    },
+#endif
 };
 
 h5_status h5_set_param(h5_context handle, h5_voice voice, h5_param param,

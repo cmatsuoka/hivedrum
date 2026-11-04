@@ -7,3 +7,4 @@ lib/
 *.wav
 h5_test
 h5_test-xtra
+.opencode/

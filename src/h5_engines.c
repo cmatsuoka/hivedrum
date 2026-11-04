@@ -580,9 +580,12 @@ void h5_kick_setup(void *engine, h5_voice voice,
     h5_kick_apply(engine, params, sample_rate);
 }
 
-void h5_kick_trigger(void *engine, int32_t level_q16, uint32_t sample_rate)
+void h5_kick_trigger(void *engine, int32_t level_q16,
+    uint32_t sample_rate, uint32_t variant)
 {
     struct h5_kick_s *k = (struct h5_kick_s *)engine;
+
+    (void)variant; /* the Kick has no open character */
 
     /* The strike level of this hit: it scales the level of the whole hit,
      * the depth of the pitch envelope, the noise cutoff sweep and the
@@ -776,9 +779,12 @@ void h5_tom_setup(void *engine, h5_voice voice,
     h5_tom_apply(engine, params, sample_rate);
 }
 
-void h5_tom_trigger(void *engine, int32_t level_q16, uint32_t sample_rate)
+void h5_tom_trigger(void *engine, int32_t level_q16,
+    uint32_t sample_rate, uint32_t variant)
 {
     struct h5_tom_s *t = (struct h5_tom_s *)engine;
+
+    (void)variant; /* the Toms have no open character */
 
     /* The strike level of this hit; see the Kick engine for the laws. */
     h5_velocity_compute(&t->vel, level_q16, H5_STD_CLICK_FLOOR_Q16);
@@ -975,10 +981,13 @@ void h5_snare_setup(void *engine, h5_voice voice,
     h5_snare_apply(engine, params, sample_rate);
 }
 
-void h5_snare_trigger(void *engine, int32_t level_q16, uint32_t sample_rate)
+void h5_snare_trigger(void *engine, int32_t level_q16,
+    uint32_t sample_rate, uint32_t variant)
 {
     struct h5_snare_s *sn = (struct h5_snare_s *)engine;
     size_t i;
+
+    (void)variant; /* the Snare has no open character */
 
     /* The strike level of this hit; see the Kick engine for the laws. The
      * pitch curve depends on it, so it is rebuilt for the hit. */

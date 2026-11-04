@@ -106,8 +106,7 @@ void h5_process(h5_context handle, int16_t *stereo_out, size_t frames)
 
         /* Visit only the voices that are still sounding. Bits are cleared as
          * their engines finish, so a silent voice is skipped entirely and a
-         * fully silent kit needs no per-frame mixing at all. The voice and
-         * instrument enums share the same order, hence the cast below. */
+         * fully silent kit needs no per-frame mixing at all. */
         for (voice = 0; voice < H5_VOICE_COUNT; voice++) {
             uint32_t bit = (uint32_t)1u << (unsigned)voice;
             int32_t out;
@@ -121,7 +120,7 @@ void h5_process(h5_context handle, int16_t *stereo_out, size_t frames)
                 int64_t level;
                 int32_t volume;
 
-                h5_mix_add(ctx, (h5_instrument)voice, out, &left, &right);
+                h5_mix_add(ctx, voice, out, &left, &right);
 
                 volume = ctx->voice_params[voice][H5_PARAM_VOLUME];
                 level = (int64_t)out * (int64_t)volume;
@@ -134,6 +133,12 @@ void h5_process(h5_context handle, int16_t *stereo_out, size_t frames)
                 }
                 if ((int32_t)level > ctx->voice_level[voice]) {
                     ctx->voice_level[voice] = (int32_t)level;
+                }
+                /* The two Hi-hat instruments share the voice, so they
+                 * report the same level. Their indices differ by one. */
+                if (voice == H5_VOICE_HIHAT
+                    && (int32_t)level > ctx->voice_level[H5_INSTR_HIHAT_OPEN]) {
+                    ctx->voice_level[H5_INSTR_HIHAT_OPEN] = (int32_t)level;
                 }
             }
             if (!still_active) {
@@ -159,29 +164,43 @@ void h5_process(h5_context handle, int16_t *stereo_out, size_t frames)
 h5_status h5_set_instrument_volume(h5_context handle, h5_instrument instrument,
     int32_t volume_q16)
 {
-    return h5_set_param(handle, (h5_voice)instrument, H5_PARAM_VOLUME,
-        volume_q16);
+    if ((unsigned)instrument >= (unsigned)H5_INSTR_COUNT) {
+        return H5_ERR_INVALID_INSTRUMENT;
+    }
+    return h5_set_param(handle, h5_voice_from_instrument(instrument),
+        H5_PARAM_VOLUME, volume_q16);
 }
 
 h5_status h5_set_instrument_pan(h5_context handle, h5_instrument instrument,
     int32_t pan_q16)
 {
-    return h5_set_param(handle, (h5_voice)instrument, H5_PARAM_PAN,
-        pan_q16);
+    if ((unsigned)instrument >= (unsigned)H5_INSTR_COUNT) {
+        return H5_ERR_INVALID_INSTRUMENT;
+    }
+    return h5_set_param(handle, h5_voice_from_instrument(instrument),
+        H5_PARAM_PAN, pan_q16);
 }
 
 h5_status h5_get_instrument_volume(const h5_context handle,
     h5_instrument instrument,
     int32_t *out)
 {
-    return h5_get_param(handle, (h5_voice)instrument, H5_PARAM_VOLUME, out);
+    if ((unsigned)instrument >= (unsigned)H5_INSTR_COUNT) {
+        return H5_ERR_INVALID_INSTRUMENT;
+    }
+    return h5_get_param(handle, h5_voice_from_instrument(instrument),
+        H5_PARAM_VOLUME, out);
 }
 
 h5_status h5_get_instrument_pan(const h5_context handle,
     h5_instrument instrument,
     int32_t *out)
 {
-    return h5_get_param(handle, (h5_voice)instrument, H5_PARAM_PAN, out);
+    if ((unsigned)instrument >= (unsigned)H5_INSTR_COUNT) {
+        return H5_ERR_INVALID_INSTRUMENT;
+    }
+    return h5_get_param(handle, h5_voice_from_instrument(instrument),
+        H5_PARAM_PAN, out);
 }
 
 h5_status h5_get_instrument_levels(const h5_context handle, int32_t *levels)
@@ -210,7 +229,7 @@ h5_status h5_trigger(h5_context handle, h5_instrument instrument)
         return H5_ERR_INVALID_INSTRUMENT;
     }
 
-    h5_voice_trigger_instrument(ctx, instrument);
+    h5_voice_trigger_instrument_velocity(ctx, instrument, 127u);
     return H5_OK;
 }
 
@@ -229,9 +248,7 @@ h5_status h5_trigger_velocity(h5_context handle, h5_instrument instrument,
         return H5_ERR_RANGE;
     }
 
-    /* The instrument and voice enums share their order, so the mapping is a
-     * cast. */
-    h5_voice_trigger_velocity(ctx, (h5_voice)instrument, velocity);
+    h5_voice_trigger_instrument_velocity(ctx, instrument, velocity);
     return H5_OK;
 }
 

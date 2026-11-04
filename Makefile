@@ -2,14 +2,21 @@
 #
 # Targets:
 #   all     build libhive.a
-#   check   build and run the test harness, both build variants
+#   check   build and run the test harness
 #   example build the OpenAL keys player
 #   clean   remove the build products
 #
 # Options:
-#   XTRA_PRECISION=1   add -DLIBHIVE_XTRA_PRECISION: also render the Snare's
-#                      second drive harmonic (below masking in the mix). Off
-#                      by default; `make check` builds and tests both variants.
+#   The Hi-hat and Cymbal engines are compiled in by default, gated
+#   behind LIBHIVE_ENGINE_HIHAT and LIBHIVE_ENGINE_CYMBAL (both passed via
+#   -D in ENGINE_DEFS below). Override ENGINE_DEFS to trim the build:
+#   `make ENGINE_DEFS=-DLIBHIVE_ENGINE_HIHAT` builds without the Cymbal,
+#   `make ENGINE_DEFS=` builds neither; the disabled voices stay in the
+#   API but render silence and accept no parameters. The same definitions
+#   are passed to the test harness, which then skips the stages of the
+#   engines that are not compiled in. LIBHIVE_XTRA_PRECISION
+#   (the Snare's second drive harmonic, below masking) is never defined by
+#   the Makefile; add -DLIBHIVE_XTRA_PRECISION to CFLAGS by hand to enable it.
 
 CC      ?= cc
 AR      ?= ar
@@ -21,15 +28,7 @@ BUILD   ?= build
 LIB     ?= libhive.a
 TEST    ?= h5_test
 
-XTRA_PRECISION ?=
-ifeq ($(XTRA_PRECISION),1)
-EXTRA_CFLAGS := -DLIBHIVE_XTRA_PRECISION
-BUILD := $(BUILD)-xtra
-LIB   := libhive-xtra.a
-TEST  := h5_test-xtra
-else ifneq ($(XTRA_PRECISION),)
-$(error XTRA_PRECISION must be empty or 1)
-endif
+ENGINE_DEFS := -DLIBHIVE_ENGINE_HIHAT -DLIBHIVE_ENGINE_CYMBAL
 
 CSTD     := -std=c99
 WARN     := -Wall -Wextra -Werror
@@ -53,8 +52,8 @@ NO_UNWIND := $(shell $(CC) -fno-asynchronous-unwind-tables -fno-unwind-tables \
 NO_STACK_PROTECTOR := $(shell $(CC) -fno-stack-protector -Werror -E -x c \
 	/dev/null >/dev/null 2>&1 && echo "-fno-stack-protector")
 
-LIB_CFLAGS  := $(CSTD) $(WARN) $(OPT) $(FLOAT_WARN) $(NO_UNWIND) $(NO_STACK_PROTECTOR) $(INCLUDES) $(CFLAGS) $(EXTRA_CFLAGS) -MMD -MP
-TEST_CFLAGS := $(CSTD) $(WARN) $(OPT) $(NO_UNWIND) $(INCLUDES) $(CFLAGS) -MMD -MP
+LIB_CFLAGS  := $(CSTD) $(WARN) $(OPT) $(FLOAT_WARN) $(NO_UNWIND) $(NO_STACK_PROTECTOR) $(INCLUDES) $(CFLAGS) $(ENGINE_DEFS) -MMD -MP
+TEST_CFLAGS := $(CSTD) $(WARN) $(OPT) $(NO_UNWIND) $(INCLUDES) $(CFLAGS) $(ENGINE_DEFS) -MMD -MP
 
 LIB_SRCS  := $(wildcard src/*.c)
 TEST_SRCS := $(wildcard test/*.c)
@@ -68,6 +67,7 @@ TEST_OBJS := $(patsubst test/%.c,$(BUILD)/test/%.o,$(TEST_SRCS))
 # rate and stay at $(OPT).
 HOT_SRCS := \
 	src/h5_engines.c \
+	src/h5_metallic.c \
 	src/h5_filter.c \
 	src/h5_fixed.c \
 	src/h5_noise.c \
@@ -86,7 +86,7 @@ OPENAL_CFLAGS := $(shell pkg-config --cflags openal 2>/dev/null)
 OPENAL_LIBS   := $(shell pkg-config --libs openal 2>/dev/null || echo -lopenal)
 
 
-.PHONY: all check check-default check-xtra example play_keys clean
+.PHONY: all check check-default example play_keys clean
 
 all: $(LIB)
 
@@ -120,12 +120,7 @@ $(BUILD)/examples/play_keys.o: examples/play_keys.c
 	@mkdir -p $(dir $@)
 	$(CC) $(LIB_CFLAGS) $(OPENAL_CFLAGS) -c -o $@ $<
 
-# The harness exercises the library, so run it against both build variants:
-# the default (lean) library and the LIBHIVE_XTRA_PRECISION one. The
-# secondary run rebuilds everything under build-xtra/ with the macro
-# defined and runs the same commands. The per-voice WAV files the harness
-# writes are the same path in both runs; build was not meant to be kept.
-check: check-default check-xtra
+check: check-default
 
 check-default: $(TEST) $(EXAMPLE_OBJS)
 	./$(TEST) --init
@@ -136,13 +131,12 @@ check-default: $(TEST) $(EXAMPLE_OBJS)
 	./$(TEST) --kick
 	./$(TEST) --tom
 	./$(TEST) --snare
+	./$(TEST) --hihat
+	./$(TEST) --cymbal
 	./$(TEST) --mixer
 	./$(TEST) --velocity
 
-check-xtra:
-	$(MAKE) --no-print-directory XTRA_PRECISION=1 check-default
-
 clean:
-	rm -rf $(BUILD) $(BUILD)-xtra $(LIB) $(TEST) libhive-xtra.a h5_test-xtra
+	rm -rf $(BUILD) build-xtra $(LIB) $(TEST) libhive-xtra.a h5_test-xtra
 
 -include $(LIB_OBJS:.o=.d) $(TEST_OBJS:.o=.d) $(EXAMPLE_OBJS:.o=.d)

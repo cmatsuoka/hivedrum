@@ -12,16 +12,39 @@
 #include "h5_fixed.h"
 #include <stdint.h>
 
-/* The render loop maps each active voice bit to its instrument index by a
- * cast, and the voice dispatch maps an instrument to its voice the same
- * way, so the two public enums must keep the same order and size. */
+/* The instrument and voice enums are not in one-to-one order: the two
+ * Hi-hat instruments both map to the Hi-hat voice. Every instrument maps to
+ * exactly one voice; the map below is the single source of truth. */
 typedef char h5_voice_instrument_order_check[
     ((int)H5_VOICE_KICK == (int)H5_INSTR_KICK &&
      (int)H5_VOICE_SNARE == (int)H5_INSTR_SNARE &&
      (int)H5_VOICE_TOM_1 == (int)H5_INSTR_TOM_1 &&
      (int)H5_VOICE_TOM_2 == (int)H5_INSTR_TOM_2 &&
      (int)H5_VOICE_TOM_3 == (int)H5_INSTR_TOM_3 &&
-     (int)H5_VOICE_COUNT == (int)H5_INSTR_COUNT) ? 1 : -1];
+     (int)H5_VOICE_CYMBAL == (int)H5_INSTR_CYMBAL &&
+     (int)H5_VOICE_HIHAT == (int)H5_INSTR_HIHAT_CLOSED &&
+     H5_VOICE_COUNT == 7 &&
+     H5_INSTR_COUNT == 8) ? 1 : -1];
+
+/* Map a trigger instrument to its parameter voice. The instrument must be
+ * in range. */
+static inline h5_voice h5_voice_from_instrument(h5_instrument instrument)
+{
+    static const h5_voice map[H5_INSTR_COUNT] = {
+        H5_VOICE_KICK, H5_VOICE_SNARE,
+        H5_VOICE_TOM_1, H5_VOICE_TOM_2, H5_VOICE_TOM_3,
+        H5_VOICE_CYMBAL, H5_VOICE_HIHAT, H5_VOICE_HIHAT
+    };
+
+    return map[(unsigned)instrument < (unsigned)H5_INSTR_COUNT
+        ? (unsigned)instrument : 0u];
+}
+
+/* True for the open Hi-hat instrument; false for every other target. */
+static inline bool h5_instrument_is_open(h5_instrument instrument)
+{
+    return instrument == H5_INSTR_HIHAT_OPEN;
+}
 
 /* Full sine period, one entry per sample of a 1024-step cycle. The oscillator
  * and the filter coefficient setup interpolate between entries, so this is
@@ -313,6 +336,9 @@ struct h5_kick_s {
  * contiguous in the public enum. */
 #define H5_TOM_COUNT 3
 
+/* Number of square oscillators in the metallic bank. */
+#define H5_METALLIC_BANK 10
+
 /* Tom voice runtime state. The engine keeps its own copies of the parameters
  * it needs per sample so the audio path never reads the parameter matrix. Each
  * Tom instance has its own envelopes, filters, oscillator and noise state,
@@ -361,6 +387,27 @@ struct h5_snare_s {
     int32_t click_gain_q16;    /* 63/80 * Click^0.25 */
 };
 
+/* Metallic voice runtime state, shared by the Cymbal and the Hi-hat. The
+ * two differ only in the filter-envelope depth, the output defaults and
+ * (for the Hi-hat) the open/closed trigger variants. */
+struct h5_metallic_s {
+    struct h5_engine_s head;
+    struct h5_velocity_s vel;   /* only the linear level is used */
+    struct h5_env_s env;        /* AR: Click attack, Decay release */
+    struct h5_noise_s noise;
+    struct h5_svf_s out_filter; /* swept low-pass */
+    struct h5_sweep_s out_sweep; /* coefficients for out_filter */
+    uint32_t phase[H5_METALLIC_BANK];  /* 28-bit phases */
+    int32_t inc[H5_METALLIC_BANK];     /* phase increments at Pitch scale */
+    int32_t noise_tone_q16;     /* noise weight in the mix (0..1) */
+    int32_t noise_pitch_q16;   /* output filter base cutoff, Hz Q16 */
+    int32_t filter_bend_q16;    /* filter sweep depth (Hi-hat 0.0, Cymbal 0.7) */
+    int32_t click_q16;          /* attack time, seconds Q16 */
+    int32_t decay_q16;          /* release time, seconds Q16 */
+    uint8_t open;               /* Hi-hat: the hit was triggered open */
+    uint8_t has_open;           /* Hi-hat only; 0 for the Cymbal */
+};
+
 /* The concrete context behind the opaque h5_context handle. */
 struct h5_context_s {
     uint32_t sample_rate;
@@ -389,10 +436,13 @@ struct h5_context_s {
     int32_t voice_level[H5_INSTR_COUNT];
 
     /* Voice runtime state, initialized by h5_voice_setup_all(). The Toms are
-     * three independent instances of the same engine. */
+     * three independent instances of the same engine. The Cymbal and the
+     * Hi-hat share the metallic engine with per-voice configuration. */
     struct h5_kick_s kick;
     struct h5_tom_s tom[H5_TOM_COUNT];
     struct h5_snare_s snare;
+    struct h5_metallic_s cymbal;
+    struct h5_metallic_s hihat;
 };
 
 /* The engine operations. One set per engine type; the three Toms share the
@@ -407,13 +457,18 @@ struct h5_engine_ops {
         const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate);
     void (*configure)(void *engine,
         const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate);
-    void (*trigger)(void *engine, int32_t level_q16, uint32_t sample_rate);
+    /* variant: 0 for a normal hit, 1 for the open Hi-hat character.
+     * Engines without an open character ignore it. */
+    void (*trigger)(void *engine, int32_t level_q16, uint32_t sample_rate,
+        uint32_t variant);
     int32_t (*process)(void *engine);
 };
 
 extern const struct h5_engine_ops h5_kick_ops;
 extern const struct h5_engine_ops h5_snare_ops;
 extern const struct h5_engine_ops h5_tom_ops;
+extern const struct h5_engine_ops h5_cymbal_ops;
+extern const struct h5_engine_ops h5_hihat_ops;
 
 /* One voice's binding to an engine instance: the operation set it runs and
  * where its engine state sits inside the context. */
@@ -427,7 +482,8 @@ extern const struct h5_voice_slot h5_voice_slots[H5_VOICE_COUNT];
 /* Kick engine. The engine pointer addresses a struct h5_kick_s. */
 void h5_kick_setup(void *engine, h5_voice voice,
     const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate);
-void h5_kick_trigger(void *engine, int32_t level_q16, uint32_t sample_rate);
+void h5_kick_trigger(void *engine, int32_t level_q16, uint32_t sample_rate,
+    uint32_t variant);
 int32_t h5_kick_process(void *engine);
 
 /* Tom engine. The engine pointer addresses a struct h5_tom_s. Times and
@@ -436,24 +492,36 @@ int32_t h5_kick_process(void *engine);
  * successive hits are not identical. */
 void h5_tom_setup(void *engine, h5_voice voice,
     const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate);
-void h5_tom_trigger(void *engine, int32_t level_q16, uint32_t sample_rate);
+void h5_tom_trigger(void *engine, int32_t level_q16, uint32_t sample_rate,
+    uint32_t variant);
 int32_t h5_tom_process(void *engine);
+
+/* Metallic engines (Cymbal and Hi-hat). Each engine pointer addresses a
+ * struct h5_metallic_s. Times and controls are taken from the context's
+ * parameter matrix; the noise generator is seeded per instance and
+ * free-runs across triggers so successive hits are not identical. */
+void h5_metallic_setup(void *engine, h5_voice voice,
+    const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate);
+void h5_metallic_trigger(void *engine, int32_t level_q16,
+    uint32_t sample_rate, uint32_t variant);
+int32_t h5_metallic_process(void *engine);
 
 /* Snare engine. The engine pointer addresses a struct h5_snare_s. */
 void h5_snare_setup(void *engine, h5_voice voice,
     const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate);
-void h5_snare_trigger(void *engine, int32_t level_q16, uint32_t sample_rate);
+void h5_snare_trigger(void *engine, int32_t level_q16, uint32_t sample_rate,
+    uint32_t variant);
 int32_t h5_snare_process(void *engine);
 
 /* Voice helpers used by the lifecycle, parameter and render entry points. */
 void h5_voice_setup_all(struct h5_context_s *ctx);
 void h5_voice_configure(struct h5_context_s *ctx, h5_voice voice);
-void h5_voice_trigger(struct h5_context_s *ctx, h5_voice voice);
 
-/* Trigger a voice with a MIDI velocity (0..127). The strike level of the
- * hit follows the velocity and the voice's Sensitivity. */
-void h5_voice_trigger_velocity(struct h5_context_s *ctx, h5_voice voice,
-    uint32_t velocity);
+/* Trigger the given instrument at a MIDI velocity (0..127). The velocity
+ * follows the voice's Sensitivity, and the open Hi-hat instrument selects
+ * the open character of the shared Hi-hat voice. */
+void h5_voice_trigger_instrument_velocity(struct h5_context_s *ctx,
+    h5_instrument instrument, uint32_t velocity);
 
 /* The strike level of a hit: the MIDI velocity scaled by the voice's
  * Sensitivity. At sensitivity 0 the velocity is ignored and the strike
@@ -461,10 +529,6 @@ void h5_voice_trigger_velocity(struct h5_context_s *ctx, h5_voice voice,
  * velocity is in the MIDI scale 0..127. */
 int32_t h5_voice_strike_level(const struct h5_context_s *ctx, h5_voice voice,
     uint32_t velocity);
-
-/* Map an instrument trigger to its voice. The instrument must be in range. */
-void h5_voice_trigger_instrument(struct h5_context_s *ctx,
-    h5_instrument instrument);
 
 /* The engine state of one voice. The voice must be in range. */
 static inline void *h5_voice_engine(struct h5_context_s *ctx, h5_voice voice)
@@ -486,9 +550,9 @@ static inline int32_t h5_voice_process(struct h5_context_s *ctx, h5_voice voice,
     return out;
 }
 
-/* Add one instrument's mono Q30 output to the 64-bit stereo accumulators,
+/* Add one voice's mono Q30 output to the 64-bit stereo accumulators,
  * applying its mixer volume and pan. */
-void h5_mix_add(const struct h5_context_s *ctx, h5_instrument instrument,
+void h5_mix_add(const struct h5_context_s *ctx, h5_voice voice,
     int32_t voice_out, int64_t *left, int64_t *right);
 
 /* Recompute one voice's cached stereo gains after Volume or Pan changes. */

@@ -1,10 +1,10 @@
 /*
  * h5.h - public API of the Hive-V library.
  *
- * Hive-V is a five-voice percussion synthesizer arranged as a drum kit:
- * Kick, Snare, Tom 1, Tom 2 and Tom 3. The library renders a single stereo mix
- * into a caller-supplied buffer. It has no I/O and no floating point. A
- * context is created with h5_create_context().
+ * Hive-V is a seven-voice percussion synthesizer arranged as a drum kit:
+ * Kick, Snare, Tom 1, Tom 2, Tom 3, Cymbal and Hi-hat. The library renders a
+ * single stereo mix into a caller-supplied buffer. It has no I/O and no
+ * floating point. A context is created with h5_create_context().
  *
  * Prefixes: macros and enum constants use H5_, functions and types use h5_.
  * The context is an opaque handle (h5_context).
@@ -24,7 +24,7 @@ extern "C" {
 /* Library version. major/minor/patch are packed as 0x00MMmmpp.
  * The plain integer constants keep H5_VERSION_NUMBER usable in #if. */
 #define H5_VERSION_MAJOR 0
-#define H5_VERSION_MINOR 2
+#define H5_VERSION_MINOR 3
 #define H5_VERSION_PATCH 0
 #define H5_VERSION_NUMBER \
     ((H5_VERSION_MAJOR << 16) | (H5_VERSION_MINOR << 8) | H5_VERSION_PATCH)
@@ -44,27 +44,45 @@ typedef void *h5_context;
  * it with the header's H5_VERSION_NUMBER to detect a mismatched build. */
 uint32_t h5_version_number(void);
 
-/* The five voice instances, built from three engine types. The Tom engine is
+/* The seven voice instances, built from four engine types. The Tom engine is
  * instantiated three times so the Toms have independent state and can sound
- * simultaneously. */
+ * simultaneously. The metallic engine serves the Cymbal and the Hi-hat. */
 typedef enum {
     H5_VOICE_KICK = 0,
     H5_VOICE_SNARE,
     H5_VOICE_TOM_1,
     H5_VOICE_TOM_2,
     H5_VOICE_TOM_3,
+    H5_VOICE_CYMBAL,
+    H5_VOICE_HIHAT,
     H5_VOICE_COUNT
 } h5_voice;
 
-/* The five trigger targets. Each Tom instrument triggers its own Tom voice. */
+/* The eight trigger targets. Each Tom instrument triggers its own Tom voice.
+ * The Cymbal instrument triggers the Cymbal voice. The Hi-hat is one voice
+ * reachable through two instruments: H5_INSTR_HIHAT_OPEN plays the open
+ * character with a longer release, H5_INSTR_HIHAT_CLOSED plays the closed
+ * character; triggering the closed instrument chokes a sounding open hat.
+ * Both instruments share the Hi-hat voice, its parameters and its mixer
+ * values. */
 typedef enum {
     H5_INSTR_KICK = 0,
     H5_INSTR_SNARE,
     H5_INSTR_TOM_1,
     H5_INSTR_TOM_2,
     H5_INSTR_TOM_3,
+    H5_INSTR_CYMBAL,
+    H5_INSTR_HIHAT_CLOSED,
+    H5_INSTR_HIHAT_OPEN,
     H5_INSTR_COUNT
 } h5_instrument;
+
+/* The metallic voices are optional engines. The Hi-hat is compiled in behind
+ * LIBHIVE_ENGINE_HIHAT and the Cymbal behind LIBHIVE_ENGINE_CYMBAL; both are
+ * defined by default. A voice whose engine is not compiled in stays in this
+ * API, but it renders silence and supports no parameter:
+ * h5_param_supported() reports false for it and the setters and getters
+ * return H5_ERR_UNSUPPORTED. */
 
 /* Public sound parameters. The standard drum voices (Kick, Snare, Tom 1,
  * Tom 2, Tom 3) share the six faceplate controls Noise, Tone, Bend, Decay,
@@ -162,8 +180,10 @@ bool h5_param_supported(h5_voice voice, h5_param param);
 /* Set the per-instrument mixer volume. Range is 0 .. H5_Q16_ONE;
  * out-of-range values are clamped to that range, the clamped value is
  * stored, and H5_ERR_RANGE is returned. Equivalent to
- * h5_set_param(ctx, (h5_voice)instrument, H5_PARAM_VOLUME, volume_q16),
- * kept as a function (not a macro) so arguments stay type-checked. */
+ * h5_set_param(ctx, voice, H5_PARAM_VOLUME, volume_q16), where `voice` is
+ * the instrument's parameter voice: the Hi-hat instruments both map to
+ * H5_VOICE_HIHAT, the others map to the voice of the same name. Kept as a
+ * function (not a macro) so the arguments stay type-checked. */
 h5_status h5_set_instrument_volume(h5_context ctx,
     h5_instrument instrument,
     int32_t volume_q16);
@@ -172,21 +192,22 @@ h5_status h5_set_instrument_volume(h5_context ctx,
  * 0 = left, H5_Q16_ONE / 2 = centre, H5_Q16_ONE = right. Out-of-range
  * values are clamped to that range, the clamped value is stored, and
  * H5_ERR_RANGE is returned. Equivalent to
- * h5_set_param(ctx, (h5_voice)instrument, H5_PARAM_PAN, pan_q16). */
+ * h5_set_param(ctx, voice, H5_PARAM_PAN, pan_q16), with the same voice
+ * mapping as h5_set_instrument_volume(). */
 h5_status h5_set_instrument_pan(h5_context ctx,
     h5_instrument instrument,
     int32_t pan_q16);
 
 /* Read back the per-instrument volume in Q16.16. A null *out is rejected
  * with H5_ERR_INVALID_CONTEXT. Equivalent to h5_get_param() on
- * H5_PARAM_VOLUME. */
+ * H5_PARAM_VOLUME of the instrument's parameter voice. */
 h5_status h5_get_instrument_volume(const h5_context ctx,
     h5_instrument instrument,
     int32_t *out);
 
 /* Read back the per-instrument pan in Q16.16. A null *out is rejected
  * with H5_ERR_INVALID_CONTEXT. Equivalent to h5_get_param() on
- * H5_PARAM_PAN. */
+ * H5_PARAM_PAN of the instrument's parameter voice. */
 h5_status h5_get_instrument_pan(const h5_context ctx,
     h5_instrument instrument,
     int32_t *out);
@@ -203,16 +224,20 @@ h5_status h5_get_instrument_pan(const h5_context ctx,
  * updated only while the corresponding instrument is sounding, so a host
  * can use the array to light per-instrument activity indicators.
  *
+ * The two Hi-hat instruments share one voice, so they always report the
+ * same level: a hit on either of them lights both entries, even when only
+ * one of them was triggered.
+ *
  * A null context or a null `levels` is rejected with H5_ERR_INVALID_CONTEXT. */
 h5_status h5_get_instrument_levels(const h5_context ctx,
     int32_t *levels);
 
-/* Trigger one of the five instruments at full velocity. Each Tom instrument
+/* Trigger one of the eight instruments at full velocity. Each Tom instrument
  * triggers its own Tom voice, so Tom 1, Tom 2 and Tom 3 can sound
  * simultaneously. Equivalent to h5_trigger_velocity() with velocity 127. */
 h5_status h5_trigger(h5_context ctx, h5_instrument instrument);
 
-/* Trigger one of the five instruments with a MIDI velocity.
+/* Trigger one of the eight instruments with a MIDI velocity.
  *
  * The velocity is the strike level of the hit, in the MIDI scale 0..127.
  * The engine turns it into a strike level of velocity/127 and applies it the

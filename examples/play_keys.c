@@ -7,6 +7,9 @@
  *   O - Tom 1
  *   I - Tom 2
  *   U - Tom 3
+ *   R - Cymbal
+ *   F - Hi-hat (closed)
+ *   G - Hi-hat (open)
  *   Q or Esc - quit
  *
  * Audio is streamed through OpenAL as a queue of short buffers. Four 256-frame
@@ -111,6 +114,15 @@ static int handle_key(h5_context kit, int key)
         break;
     case 'u':
         (void)h5_trigger(kit, H5_INSTR_TOM_3);
+        break;
+    case 'r':
+        (void)h5_trigger(kit, H5_INSTR_CYMBAL);
+        break;
+    case 'f':
+        (void)h5_trigger(kit, H5_INSTR_HIHAT_CLOSED);
+        break;
+    case 'g':
+        (void)h5_trigger(kit, H5_INSTR_HIHAT_OPEN);
         break;
     case 'q':
     case 27: /* Esc */

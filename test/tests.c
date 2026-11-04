@@ -30,6 +30,23 @@ static void ok(const char *what)
     printf("ok  : %s\n", what);
 }
 
+/* The metallic instruments exist only when their engine is compiled in: the
+ * Cymbal behind LIBHIVE_ENGINE_CYMBAL and the Hi-hat behind
+ * LIBHIVE_ENGINE_HIHAT. A trimmed build keeps the instruments in the API
+ * but they render silence, so the checks skip them. */
+static int instrument_available(h5_instrument instrument)
+{
+    switch (instrument) {
+    case H5_INSTR_CYMBAL:
+        return H5_TEST_CYMBAL;
+    case H5_INSTR_HIHAT_CLOSED:
+    case H5_INSTR_HIHAT_OPEN:
+        return H5_TEST_HIHAT;
+    default:
+        return 1;
+    }
+}
+
 static size_t frames_for_ms(uint32_t sample_rate, uint32_t ms)
 {
     return (size_t)((uint64_t)sample_rate * ms / 1000u);
@@ -1204,7 +1221,8 @@ static int command_mixer_levels(h5_context ctx)
     const size_t frames = frames_for_ms(TEST_RATE, 300u);
     const h5_instrument instruments[H5_INSTR_COUNT] = {
         H5_INSTR_KICK, H5_INSTR_SNARE,
-        H5_INSTR_TOM_1, H5_INSTR_TOM_2, H5_INSTR_TOM_3
+        H5_INSTR_TOM_1, H5_INSTR_TOM_2, H5_INSTR_TOM_3,
+        H5_INSTR_CYMBAL, H5_INSTR_HIHAT_CLOSED, H5_INSTR_HIHAT_OPEN
     };
     int32_t levels[H5_INSTR_COUNT];
     h5_status status;
@@ -1234,7 +1252,8 @@ static int command_mixer_levels(h5_context ctx)
     if (h5_get_instrument_levels(ctx, levels) != H5_OK ||
         levels[H5_INSTR_KICK] != 0 || levels[H5_INSTR_SNARE] != 0 ||
         levels[H5_INSTR_TOM_1] != 0 || levels[H5_INSTR_TOM_2] != 0 ||
-        levels[H5_INSTR_TOM_3] != 0) {
+        levels[H5_INSTR_TOM_3] != 0 || levels[H5_INSTR_CYMBAL] != 0 ||
+        levels[H5_INSTR_HIHAT_CLOSED] != 0 || levels[H5_INSTR_HIHAT_OPEN] != 0) {
         fail("levels are non-zero when no voice is active");
     } else {
         ok("all levels are zero when no voice is active");
@@ -1247,6 +1266,10 @@ static int command_mixer_levels(h5_context ctx)
         int others_silent = 1;
         int target_audible = 0;
 
+        if (!instrument_available(target)) {
+            continue;
+        }
+
         h5_reset(ctx);
         h5_trigger(ctx, target);
         free(render(ctx, frames));
@@ -1256,11 +1279,18 @@ static int command_mixer_levels(h5_context ctx)
             return -1;
         }
         for (j = 0u; j < (size_t)H5_INSTR_COUNT; j++) {
+            /* The two Hi-hat instruments share one voice, so a Hi-hat hit
+             * reports on both; every other instrument stays silent. */
+            int shared = (instruments[j] == H5_INSTR_HIHAT_CLOSED
+                    || instruments[j] == H5_INSTR_HIHAT_OPEN)
+                && (target == H5_INSTR_HIHAT_CLOSED
+                    || target == H5_INSTR_HIHAT_OPEN);
+
             if (instruments[j] == target) {
                 if (levels[j] > 0) {
                     target_audible = 1;
                 }
-            } else if (levels[j] != 0) {
+            } else if (!shared && levels[j] != 0) {
                 others_silent = 0;
             }
         }
@@ -1382,7 +1412,8 @@ static int command_mixer_render(h5_context ctx)
     const size_t frames = frames_for_ms(TEST_RATE, 800u);
     const h5_instrument instruments[H5_INSTR_COUNT] = {
         H5_INSTR_KICK, H5_INSTR_SNARE,
-        H5_INSTR_TOM_1, H5_INSTR_TOM_2, H5_INSTR_TOM_3
+        H5_INSTR_TOM_1, H5_INSTR_TOM_2, H5_INSTR_TOM_3,
+        H5_INSTR_CYMBAL, H5_INSTR_HIHAT_CLOSED, H5_INSTR_HIHAT_OPEN
     };
     int64_t solo_energy[H5_INSTR_COUNT];
     int64_t all_energy;
@@ -1391,6 +1422,11 @@ static int command_mixer_render(h5_context ctx)
     size_t i;
 
     for (i = 0u; i < (size_t)H5_INSTR_COUNT; i++) {
+        if (!instrument_available(instruments[i])) {
+            solo_energy[i] = 0;
+            continue;
+        }
+
         h5_reset(ctx);
         h5_trigger(ctx, instruments[i]);
         buffer = render(ctx, frames);
@@ -1426,7 +1462,7 @@ static int command_mixer_render(h5_context ctx)
     }
 
     if (result == 0) {
-        ok("all five instruments sum into one stereo mix");
+        ok("all the available instruments sum into one stereo mix");
     }
 
     if (wav_write_stereo16("build/mix.wav", buffer, frames, TEST_RATE) != 0) {
@@ -1440,6 +1476,238 @@ static int command_mixer_render(h5_context ctx)
     free(buffer);
     return result;
 }
+
+/*
+ * Metallic voices (Hi-hat and Cymbal).
+ *
+ * Each command renders hits through the public API and checks the envelope,
+ * the shared-voice open/closed behaviour and the balance control. The
+ * engines are optional, so the checks are compiled in only for the engines
+ * the library actually contains.
+ */
+
+#if H5_TEST_HIHAT || H5_TEST_CYMBAL
+
+static void set_metallic(h5_context ctx, h5_voice voice, h5_param param,
+    int32_t value)
+{
+    h5_set_param(ctx, voice, param, value);
+}
+
+/* A hit renders, swings and decays to true silence once the envelope has
+ * played out. */
+static int metallic_hit(h5_voice voice, h5_instrument instrument,
+    const char *wav_path, int32_t decay_q16, size_t frames)
+{
+    h5_context ctx = h5_create_context(TEST_RATE);
+    int16_t *buffer;
+    int32_t peak;
+    size_t tail_start;
+    int64_t tail_energy;
+    int result = 0;
+
+    if (ctx == 0) {
+        fail("could not create a context");
+        return -1;
+    }
+    h5_reset(ctx);
+    set_metallic(ctx, voice, H5_PARAM_DECAY, decay_q16);
+    h5_trigger(ctx, instrument);
+    buffer = render(ctx, frames);
+    if (buffer == 0) {
+        fail("out of memory");
+        h5_destroy_context(ctx);
+        return -1;
+    }
+
+    peak = peak_abs(buffer, 0u, frames);
+    if (peak < 1000) {
+        fail("the metallic voice is silent in its solo render");
+        result = -1;
+    } else {
+        ok("the metallic voice renders a hit");
+    }
+
+    /* The envelope ends exactly at attack + release, so the tail is
+     * silence. */
+    tail_start = frames - frames_for_ms(TEST_RATE, 100u);
+    tail_energy = energy(buffer, tail_start, frames);
+    if (tail_energy != 0) {
+        fail("the metallic voice does not decay to silence");
+        result = -1;
+    } else {
+        ok("the metallic voice decays to silence");
+    }
+
+    if (wav_write_stereo16(wav_path, buffer, frames, TEST_RATE) != 0) {
+        fail("could not write the metallic WAV file");
+        result = -1;
+    } else {
+        printf("ok  : wrote %s (%lu frames)\n", wav_path,
+            (unsigned long)frames);
+    }
+
+    free(buffer);
+    h5_destroy_context(ctx);
+    return result;
+}
+
+/* The Noise/Tone control moves the mix between the metallic bank and the
+ * noise component. */
+static int metallic_balance(h5_voice voice, h5_instrument instrument)
+{
+    h5_context ctx = h5_create_context(TEST_RATE);
+    const size_t frames = frames_for_ms(TEST_RATE, 300u);
+    int16_t *metallic;
+    int16_t *noisy;
+    int differs;
+    int32_t metallic_peak;
+    int32_t noisy_peak;
+
+    if (ctx == 0) {
+        fail("could not create a context");
+        return -1;
+    }
+
+    h5_reset(ctx);
+    set_metallic(ctx, voice, H5_PARAM_NOISE_TONE, 0);
+    h5_trigger(ctx, instrument);
+    metallic = render(ctx, frames);
+
+    h5_reset(ctx);
+    set_metallic(ctx, voice, H5_PARAM_NOISE_TONE, H5_Q16_ONE);
+    h5_trigger(ctx, instrument);
+    noisy = render(ctx, frames);
+
+    if (metallic == 0 || noisy == 0) {
+        fail("out of memory");
+        free(metallic);
+        free(noisy);
+        h5_destroy_context(ctx);
+        return -1;
+    }
+
+    differs = memcmp(metallic, noisy, frames * 2u * sizeof(int16_t)) != 0;
+    metallic_peak = peak_abs(metallic, 0u, frames);
+    noisy_peak = peak_abs(noisy, 0u, frames);
+
+    if (!differs) {
+        fail("the Noise/Tone control does not change the balance");
+    } else if (metallic_peak < 1000 || noisy_peak < 1000) {
+        fail("an end of the Noise/Tone range is silent");
+    } else {
+        ok("the Noise/Tone control changes the metallic balance");
+    }
+
+    free(metallic);
+    free(noisy);
+    h5_destroy_context(ctx);
+    return 0;
+}
+
+/* The open Hi-hat rings for longer than the closed one; both are the same
+ * voice. */
+#if H5_TEST_HIHAT
+static int command_hihat_open_close(void)
+{
+    h5_context ctx = h5_create_context(TEST_RATE);
+    const size_t frames = frames_for_ms(TEST_RATE, 1500u);
+    int16_t *closed;
+    int16_t *open;
+    size_t closed_end;
+    size_t open_end;
+
+    if (ctx == 0) {
+        fail("could not create a context");
+        return -1;
+    }
+
+    h5_reset(ctx);
+    set_metallic(ctx, H5_VOICE_HIHAT, H5_PARAM_DECAY,
+        (int32_t)(H5_Q16_ONE * 3 / 10));
+    h5_trigger(ctx, H5_INSTR_HIHAT_CLOSED);
+    closed = render(ctx, frames);
+
+    h5_reset(ctx);
+    set_metallic(ctx, H5_VOICE_HIHAT, H5_PARAM_DECAY,
+        (int32_t)(H5_Q16_ONE * 3 / 10));
+    h5_trigger(ctx, H5_INSTR_HIHAT_OPEN);
+    open = render(ctx, frames);
+
+    if (closed == 0 || open == 0) {
+        fail("out of memory");
+        free(closed);
+        free(open);
+        h5_destroy_context(ctx);
+        return -1;
+    }
+
+    closed_end = last_above(closed, frames, 1000);
+    open_end = last_above(open, frames, 1000);
+    if (open_end <= closed_end) {
+        fail("the open Hi-hat does not ring longer than the closed one");
+    } else {
+        ok("the open Hi-hat rings longer than the closed one");
+    }
+
+    free(closed);
+    free(open);
+    h5_destroy_context(ctx);
+    return 0;
+}
+
+#endif /* H5_TEST_HIHAT */
+
+#endif /* H5_TEST_HIHAT || H5_TEST_CYMBAL */
+
+#if H5_TEST_HIHAT
+int command_hihat(void)
+{
+    const size_t frames = frames_for_ms(TEST_RATE, 1500u);
+    int result = 0;
+
+    if (metallic_hit(H5_VOICE_HIHAT, H5_INSTR_HIHAT_CLOSED,
+            "build/hihat.wav", (int32_t)(H5_Q16_ONE / 2), frames) != 0) {
+        result = -1;
+    }
+    if (metallic_balance(H5_VOICE_HIHAT, H5_INSTR_HIHAT_CLOSED) != 0) {
+        result = -1;
+    }
+    if (command_hihat_open_close() != 0) {
+        result = -1;
+    }
+    return result;
+}
+#else
+int command_hihat(void)
+{
+    printf("skip: the Hi-hat engine is not compiled in\n");
+    return 0;
+}
+#endif
+
+#if H5_TEST_CYMBAL
+int command_cymbal(void)
+{
+    const size_t frames = frames_for_ms(TEST_RATE, 4000u);
+    int result = 0;
+
+    if (metallic_hit(H5_VOICE_CYMBAL, H5_INSTR_CYMBAL,
+            "build/cymbal.wav", H5_Q16_ONE, frames) != 0) {
+        result = -1;
+    }
+    if (metallic_balance(H5_VOICE_CYMBAL, H5_INSTR_CYMBAL) != 0) {
+        result = -1;
+    }
+    return result;
+}
+#else
+int command_cymbal(void)
+{
+    printf("skip: the Cymbal engine is not compiled in\n");
+    return 0;
+}
+#endif
 
 /*
  * Velocity response.
@@ -1461,8 +1729,8 @@ static int16_t *render_velocity(h5_instrument instrument, uint8_t velocity,
         return 0;
     }
     h5_reset(ctx);
-    h5_set_param(ctx, (h5_voice)instrument, H5_PARAM_SENSITIVITY,
-        sensitivity);
+    h5_set_param(ctx, h5_voice_from_instrument(instrument),
+        H5_PARAM_SENSITIVITY, sensitivity);
     h5_trigger_velocity(ctx, instrument, velocity);
     buffer = render(ctx, frames);
     h5_destroy_context(ctx);

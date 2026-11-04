@@ -11,6 +11,8 @@
  *   --kick              render a Kick hit and verify its controls
  *   --tom               render a Tom hit and verify its controls
  *   --snare             render a Snare hit and verify its controls
+ *   --hihat             render Hi-hat hits and verify open/closed
+ *   --cymbal            render a Cymbal hit and verify its controls
  *   --mixer             verify volume, pan and the stereo output stage
  *   --velocity          verify the velocity response and the sensitivity
  *                       control
@@ -59,6 +61,20 @@ static struct h5_context_s *context_new(uint32_t sample_rate)
         exit(1);
     }
     return ctx;
+}
+
+/* The metallic voices are optional engines: a voice whose engine is not
+ * compiled in supports no parameter at all, so it is not checked here.
+ * The Cymbal is behind LIBHIVE_ENGINE_CYMBAL and the Hi-hat behind
+ * LIBHIVE_ENGINE_HIHAT. */
+static int metallic_param_supported(h5_voice voice, h5_param param)
+{
+    int present = (voice == H5_VOICE_CYMBAL) ? H5_TEST_CYMBAL : H5_TEST_HIHAT;
+
+    if (!present) {
+        return 1;
+    }
+    return h5_param_supported(voice, param) ? 1 : 0;
 }
 
 static int command_init(void)
@@ -343,7 +359,9 @@ static int command_api(void)
         !h5_param_supported(H5_VOICE_SNARE, H5_PARAM_SENSITIVITY) ||
         !h5_param_supported(H5_VOICE_TOM_1, H5_PARAM_SENSITIVITY) ||
         !h5_param_supported(H5_VOICE_TOM_2, H5_PARAM_SENSITIVITY) ||
-        !h5_param_supported(H5_VOICE_TOM_3, H5_PARAM_SENSITIVITY)) {
+        !h5_param_supported(H5_VOICE_TOM_3, H5_PARAM_SENSITIVITY) ||
+        !metallic_param_supported(H5_VOICE_CYMBAL, H5_PARAM_SENSITIVITY) ||
+        !metallic_param_supported(H5_VOICE_HIHAT, H5_PARAM_SENSITIVITY)) {
         fail("h5_param_supported() does not report Sensitivity on every voice");
     } else if (h5_get_param((h5_context)ctx, H5_VOICE_SNARE,
             H5_PARAM_SENSITIVITY, &value) != H5_OK ||
@@ -659,7 +677,10 @@ static void usage(const char *program)
         "  --kick             render a Kick hit and verify its controls\n"
         "  --tom              render a Tom hit and verify its controls\n"
         "  --snare            render a Snare hit and verify its controls\n"
+        "  --hihat            render Hi-hat hits and verify open/closed\n"
+        "  --cymbal           render a Cymbal hit and verify its controls\n"
         "  --mixer            verify volume, pan and the stereo output stage\n"
+        "  --velocity         verify the velocity response and sensitivity\n"
         "  --help             this text\n");
 }
 
@@ -699,6 +720,12 @@ int main(int argc, char **argv)
     }
     if (strcmp(command, "--snare") == 0) {
         return command_snare();
+    }
+    if (strcmp(command, "--hihat") == 0) {
+        return command_hihat();
+    }
+    if (strcmp(command, "--cymbal") == 0) {
+        return command_cymbal();
     }
     if (strcmp(command, "--mixer") == 0) {
         return command_mixer();

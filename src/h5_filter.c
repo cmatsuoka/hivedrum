@@ -206,25 +206,35 @@ void h5_sweep_apply(const struct h5_sweep_s *sw, int32_t cutoff_q16,
 
     if (!sw->enabled) {
         p0 = &sw->point[0];
-        p1 = p0;
-        frac = 0u;
-    } else {
-        if (cutoff_q16 < sw->lo_q16) {
-            cutoff_q16 = sw->lo_q16;
-        }
-        pos = (uint32_t)h5_shr_round(
-            h5_mulwide(cutoff_q16 - sw->lo_q16, sw->step_q32), 16u);
-        if (pos >= ((uint32_t)(H5_SWEEP_POINTS - 1) << 16)) {
-            idx = H5_SWEEP_POINTS - 2u;
-            frac = 0xFFFFu;
-        } else {
-            idx = pos >> 16;
-            frac = pos & 0xFFFFu;
-        }
-        p0 = &sw->point[idx];
-        p1 = &sw->point[idx + 1u];
+        f->b0 = p0->b0;
+        f->a1 = p0->a1;
+        f->a2 = p0->a2;
+        f->mode = sw->mode;
+        return;
     }
 
+    if (cutoff_q16 < sw->lo_q16) {
+        cutoff_q16 = sw->lo_q16;
+    }
+    pos = (uint32_t)h5_shr_round(
+        h5_mulwide(cutoff_q16 - sw->lo_q16, sw->step_q32), 16u);
+    if (pos >= ((uint32_t)(H5_SWEEP_POINTS - 1) << 16)) {
+        idx = H5_SWEEP_POINTS - 2u;
+        frac = 0xFFFFu;
+    } else {
+        idx = pos >> 16;
+        frac = pos & 0xFFFFu;
+    }
+    p0 = &sw->point[idx];
+    p1 = &sw->point[idx + 1u];
+
+    if (frac == 0u) {
+        f->b0 = p0->b0;
+        f->a1 = p0->a1;
+        f->a2 = p0->a2;
+        f->mode = sw->mode;
+        return;
+    }
     f->b0 = p0->b0 + (int32_t)h5_shr_round(
         h5_mulwide(p1->b0 - p0->b0, (int32_t)frac), 16u);
     f->a1 = p0->a1 + (int32_t)h5_shr_round(

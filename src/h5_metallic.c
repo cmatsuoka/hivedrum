@@ -225,6 +225,19 @@ static void h5_metallic_apply(void *engine,
     m->filter_freq_q16 = m->has_open
         ? H5_METALLIC_HIHAT_FILTER_HZ * H5_Q16_ONE
         : H5_METALLIC_CYMBAL_FILTER_HZ * H5_Q16_ONE;
+    /* The cutoff of a zero sweep does not depend on the envelope, so it is
+     * computed once here instead of on every sample. */
+    {
+        int32_t fc = m->filter_freq_q16;
+
+        if (fc < H5_METALLIC_FC_MIN_HZ * H5_Q16_ONE) {
+            fc = H5_METALLIC_FC_MIN_HZ * H5_Q16_ONE;
+        }
+        if (fc > H5_METALLIC_FC_MAX_HZ * H5_Q16_ONE) {
+            fc = H5_METALLIC_FC_MAX_HZ * H5_Q16_ONE;
+        }
+        m->fc_const_q16 = fc;
+    }
 
     /* The high-pass on the noise: one pole at 25 Hz. Its coefficient is
      * 1 - exp(-2*pi*fc/sr), in Q30. */
@@ -335,8 +348,10 @@ static int32_t h5_metallic_shaper(const struct h5_metallic_s *m, int32_t x)
     int64_t arg;
     int32_t wet, dry;
 
-    /* arg = 2*pi*(1+Drive)*mix, clamped to the shaper's input range. */
-    arg = h5_shr_round((int64_t)x * H5_METALLIC_SHAPER_SCALE_Q16, 16u);
+    /* arg = 2*pi*(1+Drive)*mix, clamped to the shaper's input range. The
+     * scale fits an int32_t, so the product stays on the wide-multiply
+     * seam. */
+    arg = h5_shr_round(h5_mulwide(x, H5_METALLIC_SHAPER_SCALE_Q16), 16u);
     if (arg > H5_METALLIC_Q28_ONE) {
         arg = H5_METALLIC_Q28_ONE;
     }
@@ -374,7 +389,7 @@ int32_t h5_metallic_process(void *engine)
 
     /* The bank: ten triangle oscillators. The Bend sweeps the whole bank
      * with the metal envelope, so the increments follow the envelope. */
-    env_m3 = h5_cube_q30(env_m);
+    env_m3 = (m->bend_q16 != 0 || !m->has_open) ? h5_cube_q30(env_m) : 0;
     if (m->bend_q16 != 0) {
         ratio = h5_semitone_ratio_interp(
             (int32_t)h5_shr_round((int64_t)m->bend_q16 * env_m3, 30u));
@@ -386,7 +401,9 @@ int32_t h5_metallic_process(void *engine)
     metal = 0;
     for (i = 0; i < H5_METALLIC_BANK; i++) {
         m->phase[i] = (m->phase[i] + (uint32_t)m->inc[i]) & 0x0FFFFFFFu;
-        metal += h5_mul_q16(h5_metallic_amp[i], h5_metallic_tri(m->phase[i]));
+        metal += (int32_t)h5_shr_round(
+            h5_mulwide(h5_metallic_amp[i], h5_metallic_tri(m->phase[i])),
+            16u);
     }
     metal = h5_mul_q16(metal, H5_METALLIC_METAL_GAIN_Q16);
 
@@ -423,9 +440,15 @@ int32_t h5_metallic_process(void *engine)
         env_f = env_m3;
     }
 
-    cutoff = h5_metallic_cutoff(m, env_f);
+    cutoff = (m->sweep_q16 == 0)
+        ? m->fc_const_q16 : h5_metallic_cutoff(m, env_f);
     h5_sweep_apply(&m->noise_sweep, cutoff, &m->noise_filter);
-    h5_sweep_apply(&m->noise_sweep, cutoff, &m->noise_filter2);
+    /* The two sections share the cutoff, so the coefficients interpolated
+     * for the first section are the ones the second needs too. */
+    m->noise_filter2.b0 = m->noise_filter.b0;
+    m->noise_filter2.a1 = m->noise_filter.a1;
+    m->noise_filter2.a2 = m->noise_filter.a2;
+    m->noise_filter2.mode = m->noise_filter.mode;
     noise = h5_svf_run(&m->noise_filter, u);
     noise = h5_svf_run(&m->noise_filter2, noise);
     noise = h5_mul_q16(noise >> 3, m->noise_gain_q16);

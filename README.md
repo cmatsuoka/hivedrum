@@ -33,6 +33,17 @@ The default is size (`-Os`). The translation units that run once per sample
 tables) are compiled at `-O2`, because their speed matters more than their
 size; everything else stays at `-Os`.
 
+## Build options
+
+`make XTRA_PRECISION=1` defines `LIBHIVE_XTRA_PRECISION` and builds
+`libhive-xtra.a` / `h5_test-xtra` under `build-xtra/`. The macro keeps one
+DSP stage whose effect is below masking in the mix: the Snare's second
+drive harmonic (about 40 dB below the fundamental; the two builds' renders
+differ by at most ~66 LSB, about -46 dB RMS including the mix). The
+default build omits it to keep the per-sample path a little cheaper; leave
+the macro undefined for normal use. `make check` builds and runs the test
+harness against both variants.
+
 ## Usage
 
 ```c
@@ -132,8 +143,9 @@ ignored and every hit sounds at full strike level.
 
 ## Tests
 
-`make check` runs the harness in stages covering initialization, sine and DSP
-primitives, silence, the public API, per-engine sound checks for Kick, Tom and
-Snare, and the mixer and output stage. It also renders `build/silence.wav`,
-`build/kick.wav`, `build/tom.wav`, `build/snare.wav` and `build/mix.wav` for
-listening.
+`make check` runs the harness twice: once against the default `libhive.a`
+and once against the `LIBHIVE_XTRA_PRECISION` build (`build-xtra/`). The
+stages cover initialization, sine and DSP primitives, silence, the public
+API, per-engine sound checks for Kick, Tom and Snare, and the mixer and
+output stage. It also renders `build/silence.wav`, `build/kick.wav`,
+`build/tom.wav`, `build/snare.wav` and `build/mix.wav` for listening.

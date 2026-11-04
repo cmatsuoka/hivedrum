@@ -2,15 +2,34 @@
 #
 # Targets:
 #   all     build libhive.a
-#   check   build and run the test harness
+#   check   build and run the test harness, both build variants
 #   example build the OpenAL keys player
 #   clean   remove the build products
+#
+# Options:
+#   XTRA_PRECISION=1   add -DLIBHIVE_XTRA_PRECISION: also render the Snare's
+#                      second drive harmonic (below masking in the mix). Off
+#                      by default; `make check` builds and tests both variants.
 
 CC      ?= cc
 AR      ?= ar
 RANLIB  ?= ranlib
 OPT     ?= -Os
 HOT_OPT ?= -O2
+
+BUILD   ?= build
+LIB     ?= libhive.a
+TEST    ?= h5_test
+
+XTRA_PRECISION ?=
+ifeq ($(XTRA_PRECISION),1)
+EXTRA_CFLAGS := -DLIBHIVE_XTRA_PRECISION
+BUILD := $(BUILD)-xtra
+LIB   := libhive-xtra.a
+TEST  := h5_test-xtra
+else ifneq ($(XTRA_PRECISION),)
+$(error XTRA_PRECISION must be empty or 1)
+endif
 
 CSTD     := -std=c99
 WARN     := -Wall -Wextra -Werror
@@ -34,10 +53,8 @@ NO_UNWIND := $(shell $(CC) -fno-asynchronous-unwind-tables -fno-unwind-tables \
 NO_STACK_PROTECTOR := $(shell $(CC) -fno-stack-protector -Werror -E -x c \
 	/dev/null >/dev/null 2>&1 && echo "-fno-stack-protector")
 
-LIB_CFLAGS  := $(CSTD) $(WARN) $(OPT) $(FLOAT_WARN) $(NO_UNWIND) $(NO_STACK_PROTECTOR) $(INCLUDES) $(CFLAGS) -MMD -MP
+LIB_CFLAGS  := $(CSTD) $(WARN) $(OPT) $(FLOAT_WARN) $(NO_UNWIND) $(NO_STACK_PROTECTOR) $(INCLUDES) $(CFLAGS) $(EXTRA_CFLAGS) -MMD -MP
 TEST_CFLAGS := $(CSTD) $(WARN) $(OPT) $(NO_UNWIND) $(INCLUDES) $(CFLAGS) -MMD -MP
-
-BUILD := build
 
 LIB_SRCS  := $(wildcard src/*.c)
 TEST_SRCS := $(wildcard test/*.c)
@@ -63,15 +80,13 @@ $(HOT_OBJS): EXTRA_OPT := $(HOT_OPT)
 EXAMPLES  := $(wildcard examples/*.c)
 EXAMPLE_OBJS := $(patsubst examples/%.c,$(BUILD)/examples/%.o,$(EXAMPLES))
 
-LIB  := libhive.a
-TEST := h5_test
 EXAMPLE := $(BUILD)/examples/play_keys
 
 OPENAL_CFLAGS := $(shell pkg-config --cflags openal 2>/dev/null)
 OPENAL_LIBS   := $(shell pkg-config --libs openal 2>/dev/null || echo -lopenal)
 
 
-.PHONY: all check example play_keys clean
+.PHONY: all check check-default check-xtra example play_keys clean
 
 all: $(LIB)
 
@@ -80,7 +95,7 @@ $(LIB): $(LIB_OBJS)
 	$(RANLIB) $@
 
 $(TEST): $(TEST_OBJS) $(LIB)
-	$(CC) $(TEST_CFLAGS) -o $@ $(TEST_OBJS) -L. -lhive -lm
+	$(CC) $(TEST_CFLAGS) -o $@ $(TEST_OBJS) $(LIB) -lm
 
 $(BUILD)/src/%.o: src/%.c
 	@mkdir -p $(dir $@)
@@ -99,13 +114,20 @@ example: play_keys
 play_keys: $(EXAMPLE)
 
 $(EXAMPLE): $(BUILD)/examples/play_keys.o $(LIB)
-	$(CC) $(TEST_CFLAGS) -o $@ $< -L. -lhive $(OPENAL_LIBS)
+	$(CC) $(TEST_CFLAGS) -o $@ $< $(LIB) $(OPENAL_LIBS)
 
 $(BUILD)/examples/play_keys.o: examples/play_keys.c
 	@mkdir -p $(dir $@)
 	$(CC) $(LIB_CFLAGS) $(OPENAL_CFLAGS) -c -o $@ $<
 
-check: $(TEST) $(EXAMPLE_OBJS)
+# The harness exercises the library, so run it against both build variants:
+# the default (lean) library and the LIBHIVE_XTRA_PRECISION one. The
+# secondary run rebuilds everything under build-xtra/ with the macro
+# defined and runs the same commands. The per-voice WAV files the harness
+# writes are the same path in both runs; build was not meant to be kept.
+check: check-default check-xtra
+
+check-default: $(TEST) $(EXAMPLE_OBJS)
 	./$(TEST) --init
 	./$(TEST) --sine
 	./$(TEST) --dsp
@@ -117,7 +139,10 @@ check: $(TEST) $(EXAMPLE_OBJS)
 	./$(TEST) --mixer
 	./$(TEST) --velocity
 
+check-xtra:
+	$(MAKE) --no-print-directory XTRA_PRECISION=1 check-default
+
 clean:
-	rm -rf $(BUILD) $(LIB) $(TEST)
+	rm -rf $(BUILD) $(BUILD)-xtra $(LIB) $(TEST) libhive-xtra.a h5_test-xtra
 
 -include $(LIB_OBJS:.o=.d) $(TEST_OBJS:.o=.d) $(EXAMPLE_OBJS:.o=.d)

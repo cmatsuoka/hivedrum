@@ -1,7 +1,9 @@
 build/
+build-xtra/
 lib/
 *.o
 *.a
 *.so
 *.wav
 h5_test
+h5_test-xtra

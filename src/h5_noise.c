@@ -67,6 +67,13 @@ void h5_noise_init_voice(struct h5_noise_s *n, h5_voice voice,
 int32_t h5_noise_next(struct h5_noise_s *n)
 {
     n->x = n->x * H5_NOISE_MUL + H5_NOISE_INC;
+    /* At the rates where the hold divides exactly (44.1 kHz and up, the
+     * divisor is 1), every sample is held; skip the hold-phase bookkeeping
+     * entirely. */
+    if (n->divider == 1u) {
+        n->held = (int32_t)n->x;
+        return n->held;
+    }
     if (n->phase == 0u) {
         n->held = (int32_t)n->x;
     }

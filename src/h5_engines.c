@@ -54,6 +54,11 @@
  * identical: the oscillator, the triangle, the transient burst, the body
  * mix and the output stage live in the shared helpers below. What stays
  * engine-specific is the branch structure each voice actually uses.
+ *
+ * One stage is a refined version that only LIBHIVE_XTRA_PRECISION keeps:
+ * the Snare's second drive harmonic (about 40 dB below the fundamental),
+ * which sits far below masking in the mixed output. The default build
+ * omits it to keep the per-sample cost down.
  */
 
 #include "h5_internal.h"
@@ -136,9 +141,10 @@
 #define H5_SNARE_TRI_WEIGHT_Q16 (22 * H5_Q16_ONE / 100) /* 0.22 */
 
 /* The Snare's drive stage. The driven tone carries a third harmonic about
- * 24 dB below its fundamental and a second harmonic about 40 dB below it.
- * The third harmonic is what carries the drive, but it is kept softer than
- * in the earlier Kick/Tom-style calibration so the shell tone does not
+ * 24 dB below its fundamental (always rendered) and a second harmonic about
+ * 40 dB below it (LIBHIVE_XTRA_PRECISION only; it is below masking in the
+ * mix). The third harmonic is what carries the drive, but it is kept softer
+ * than in the earlier Kick/Tom-style calibration so the shell tone does not
  * project too many harmonics and sound "melodic". The weights are relative
  * to the fundamental, which the core keeps at full scale. */
 #define H5_SNARE_DRIVE_H2_Q16 (642)   /* 0.0098 */
@@ -997,7 +1003,10 @@ void h5_snare_trigger(void *engine, int32_t level_q16, uint32_t sample_rate)
 int32_t h5_snare_process(void *engine)
 {
     struct h5_snare_s *sn = (struct h5_snare_s *)engine;
-    int32_t env, env_click, env3, s, st, s2, s3, core, u;
+    int32_t env, env_click, env3, s, st, s3, core, u;
+#ifdef LIBHIVE_XTRA_PRECISION
+    int32_t s2;
+#endif
     int32_t rattle, body, click, mix;
     int32_t cutoff;
     size_t i;
@@ -1020,12 +1029,15 @@ int32_t h5_snare_process(void *engine)
     /* Pitch envelope: f = TonePitch * 1.5^(Bend * env^3 / 12). */
     h5_tone_osc(&sn->phase, &sn->pitch_curve, env3, &s, &st);
 
-    /* The drive stage: a sine-heavy core plus second and third harmonics.
+    /* The drive stage: a sine-heavy core plus (with LIBHIVE_XTRA_PRECISION)
+     * a second harmonic about 40 dB down and a subtracted third harmonic.
      * The Snare shell needs to sit behind the rattle, so the triangle weight
      * is lower than Kick/Tom to keep the tone from dominating with odd
      * harmonics. The third harmonic of the drive is subtracted so it lifts
      * the triangle's third harmonic rather than cancelling it. */
+#ifdef LIBHIVE_XTRA_PRECISION
     s2 = h5_sine_interp(sn->phase * 2u);
+#endif
     s3 = h5_sine_interp(sn->phase * 3u);
     {
         int32_t sine = h5_mul_q16(s, H5_Q16_ONE - H5_SNARE_TRI_WEIGHT_Q16);
@@ -1033,9 +1045,14 @@ int32_t h5_snare_process(void *engine)
             H5_SNARE_TRI_WEIGHT_Q16) << 1);
         int32_t snare_core = h5_sat_add_q31(sine, tri);
 
+#ifdef LIBHIVE_XTRA_PRECISION
         core = h5_sat_add_q31(snare_core,
             h5_sat_add_q31(h5_mul_q16(s2, H5_SNARE_DRIVE_H2_Q16),
                 -h5_mul_q16(s3, H5_SNARE_DRIVE_H3_Q16)));
+#else
+        core = h5_sat_sub_q31(snare_core,
+            h5_mul_q16(s3, H5_SNARE_DRIVE_H3_Q16));
+#endif
     }
     core = h5_mul_q16(core, H5_SNARE_DRIVE_HEADROOM_Q16);
 

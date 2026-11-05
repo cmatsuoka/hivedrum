@@ -9,10 +9,11 @@
 
 *Libhive is under development and the API is currently unstable.*
 
-Libhive is a small, dependency-free C library that synthesizes a seven-voice
-percussion kit: Kick, Snare, three Toms, Cymbal and Hi-hat. It renders a
-stereo mix into a caller-supplied buffer and performs no I/O. All DSP is
-integer fixed-point, the library contains no floating-point code.
+Libhive is a small, dependency-free C library that synthesizes a
+percussion kit inspired by analog electronic drums from the 80s. It
+renders a stereo mix into a caller-supplied buffer and performs no I/O.
+All DSP is integer fixed-point, with no memory allocation performed
+after the library initialization.
 
 ## Features
 
@@ -24,6 +25,7 @@ integer fixed-point, the library contains no floating-point code.
   square bank, a swept resonant low-pass and a soft-clip stage.
 - Per-instrument volume and pan.
 - Per-voice sound parameters, exposed in physical units.
+- Integrated reverb and noise gate effects with per instrument send levels.
 - Deterministic integer DSP: 28-bit phase sine, state-variable filters,
   shaped envelopes and a table-driven soft clipper.
 - Plain C99 with a single public header. No external dependencies.

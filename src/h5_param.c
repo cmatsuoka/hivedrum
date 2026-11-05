@@ -45,7 +45,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
     },
     [H5_VOICE_SNARE] = {
-        [H5_PARAM_NOISE_PITCH] = { I(900), I(14000), 581042176 },
+        [H5_PARAM_NOISE_PITCH] = { I(900), I(14000), 871563264 },
         [H5_PARAM_TONE_PITCH]  = { I(28),  I(880),   6278349 },
         [H5_PARAM_BEND]        = { I(-62), I(62),    1271398 },
         [H5_PARAM_DECAY]       = { F(2, 10), F(5, 1), 38011 },

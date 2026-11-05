@@ -116,8 +116,8 @@
 #define H5_SNARE_OUT_Q16 H5_Q16_ONE
 #define H5_SNARE_ATTACK_Q16 H5_MS_Q16(1)
 #define H5_SNARE_CLICK_ATTACK_Q16 H5_MS_Q16(1)
-#define H5_SNARE_NOISE_WEIGHT_Q16 (3 * H5_Q16_ONE / 10)
-#define H5_SNARE_CLICK_WEIGHT_Q16 (63 * H5_Q16_ONE / 80)
+#define H5_SNARE_NOISE_WEIGHT_Q16 (5 * H5_Q16_ONE / 10)
+#define H5_SNARE_CLICK_WEIGHT_Q16 (68 * H5_Q16_ONE / 80)
 #define H5_SNARE_SWEEP_DEPTH_Q16 H5_Q16_ONE
 
 /* The Snare's filter-envelope contour depth. The original snare card has no
@@ -146,7 +146,7 @@
  * headroom while keeping the shell tone slightly behind the rattle.
  * Without this the core would clip on every hit. */
 #define H5_SNARE_DRIVE_HEADROOM_Q16 (58368) /* 0.891 */
-#define H5_SNARE_TONE_BOOST_Q16 (49152)    /* 0.750 */
+#define H5_SNARE_TONE_BOOST_Q16 (39322)    /* 0.600 */
 
 /* Rattle bank: the wire noise is broadband with four resonances. The
  * measured engine spectrum shows a wire body near 755 Hz, a strong narrow
@@ -161,11 +161,11 @@
 #define H5_SNARE_RATTLE_Q_2 (7 * H5_Q16_ONE / 2)
 #define H5_SNARE_RATTLE_Q_3 (7 * H5_Q16_ONE / 10)
 #define H5_SNARE_RATTLE_Q_4 (4 * H5_Q16_ONE / 5)
-#define H5_SNARE_RATTLE_WIRE_Q16 (H5_Q16_ONE)
-#define H5_SNARE_RATTLE_WEIGHT_1 (245760)  /* 3.75 */
-#define H5_SNARE_RATTLE_WEIGHT_2 (196608)  /* 3.00 */
-#define H5_SNARE_RATTLE_WEIGHT_3 (98304)   /* 1.50 */
-#define H5_SNARE_RATTLE_WEIGHT_4 (98304)   /* 1.50 */
+#define H5_SNARE_RATTLE_WIRE_Q16 (4 * H5_Q16_ONE / 10)
+#define H5_SNARE_RATTLE_WEIGHT_1 (368640)  /* 5.625 */
+#define H5_SNARE_RATTLE_WEIGHT_2 (294912)  /* 4.50 */
+#define H5_SNARE_RATTLE_WEIGHT_3 (147456)  /* 2.25 */
+#define H5_SNARE_RATTLE_WEIGHT_4 (147456)  /* 2.25 */
 
 /* Milliseconds to Q16 seconds (round-half-up). */
 #define H5_MS_Q16(ms) (((ms) * H5_Q16_ONE + 500) / 1000)
@@ -916,7 +916,7 @@ static void h5_snare_apply(void *engine,
      * 1 ms attack, a short release that follows the decay loosely. */
     h5_env_set_times(&sn->env, H5_SNARE_ATTACK_Q16, decay, sample_rate);
     h5_env_set_times(&sn->env_click, H5_SNARE_CLICK_ATTACK_Q16,
-        (decay + (2 * H5_Q16_ONE) / 5) / 10, sample_rate);
+        (decay + (2 * H5_Q16_ONE) / 5) / 8, sample_rate);
 
     /* Rattle resonators and output filters: parameter change. The swept
      * low-pass sits on the rattle path only; the fixed high-pass sits on

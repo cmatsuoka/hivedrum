@@ -410,42 +410,61 @@ static int command_api(void)
         }
     }
 
-    /* The metallic voices have their own faceplate: Sweep, Tone Pitch,
-     * Bend, Decay, Noise/Tone and Bell/Cymbal. The drum controls Noise
-     * and Click/Drum are not part of it. */
+    /* The metallic voices have their own faceplates. The Cymbal keeps
+     * Sweep, Tone Pitch, Bend, Decay, Noise/Tone and Bell/Cymbal. The
+     * Hi-hat replaces Bend and Sweep with Noise and Noise Body. */
     {
-        static const h5_voice metallic_voices[] = {
-            H5_VOICE_CYMBAL, H5_VOICE_HIHAT
-        };
-        static const h5_param metallic_faceplate[] = {
+        static const h5_param cymbal_faceplate[] = {
             H5_PARAM_SWEEP, H5_PARAM_TONE_PITCH, H5_PARAM_BEND,
             H5_PARAM_DECAY, H5_PARAM_NOISE_TONE, H5_PARAM_BELL_CYMBAL
         };
-        size_t vi;
+        static const h5_param hihat_faceplate[] = {
+            H5_PARAM_NOISE_PITCH, H5_PARAM_TONE_PITCH, H5_PARAM_DECAY,
+            H5_PARAM_NOISE_TONE, H5_PARAM_BELL_CYMBAL,
+            H5_PARAM_NOISE_BODY
+        };
+        static const h5_param cymbal_absent[] = {
+            H5_PARAM_NOISE_PITCH, H5_PARAM_CLICK_TONE, H5_PARAM_NOISE_BODY
+        };
+        static const h5_param hihat_absent[] = {
+            H5_PARAM_BEND, H5_PARAM_SWEEP, H5_PARAM_CLICK_TONE
+        };
         size_t pi;
         int missing = 0;
 
-        for (vi = 0u; vi < sizeof(metallic_voices) / sizeof(metallic_voices[0]);
-            vi++) {
-            for (pi = 0u;
-                pi < sizeof(metallic_faceplate) / sizeof(metallic_faceplate[0]);
-                pi++) {
-                if (!metallic_param_supported(metallic_voices[vi],
-                        metallic_faceplate[pi])) {
-                    missing++;
-                }
+        for (pi = 0u;
+            pi < sizeof(cymbal_faceplate) / sizeof(cymbal_faceplate[0]);
+            pi++) {
+            if (!metallic_param_supported(H5_VOICE_CYMBAL,
+                    cymbal_faceplate[pi])) {
+                missing++;
             }
-            if (metallic_param_supported(metallic_voices[vi],
-                    H5_PARAM_NOISE_PITCH) ||
-                metallic_param_supported(metallic_voices[vi],
-                    H5_PARAM_CLICK_TONE)) {
+        }
+        for (pi = 0u;
+            pi < sizeof(cymbal_absent) / sizeof(cymbal_absent[0]); pi++) {
+            if (metallic_param_supported(H5_VOICE_CYMBAL,
+                    cymbal_absent[pi])) {
+                missing++;
+            }
+        }
+        for (pi = 0u;
+            pi < sizeof(hihat_faceplate) / sizeof(hihat_faceplate[0]);
+            pi++) {
+            if (!metallic_param_supported(H5_VOICE_HIHAT,
+                    hihat_faceplate[pi])) {
+                missing++;
+            }
+        }
+        for (pi = 0u;
+            pi < sizeof(hihat_absent) / sizeof(hihat_absent[0]); pi++) {
+            if (metallic_param_supported(H5_VOICE_HIHAT, hihat_absent[pi])) {
                 missing++;
             }
         }
         if (missing != 0) {
             fail("a metallic voice does not expose its own faceplate");
         } else {
-            ok("the metallic voices expose their own six faceplate controls");
+            ok("the metallic voices expose their own faceplates");
         }
     }
 

@@ -70,17 +70,10 @@ static const int32_t h5_metallic_amp[H5_METALLIC_BANK] = {
 /* The weight of the noise path in the mix. */
 #define H5_METALLIC_NOISE_WEIGHT_Q16 (51118) /* 0.78 */
 
-/* The cutoff of the noise filter's base, Hz. It is an engine constant: the
- * faceplate of the metallic modules has no filter cutoff of its own. The
- * Hi-hat's base sits above the Cymbal's, so the closed hit keeps its sizzle
- * while the contour darkens the wash. */
-#define H5_METALLIC_HIHAT_FILTER_HZ 12000
+/* The Cymbal's noise filter edges, Hz. The Hi-hat exposes both edges as
+ * parameters instead: its Noise sets the low-pass cutoff and its Noise Body
+ * sets the high-pass corner. */
 #define H5_METALLIC_CYMBAL_FILTER_HZ 9547
-
-/* The corner of the noise high-pass, per voice, Hz. The Hi-hat's corner
- * sits in the sibilant band, so its noise carries only the sizzle above
- * it; the Cymbal's noise keeps its full range down to the subsonic corner. */
-#define H5_METALLIC_HIHAT_HP_HZ 3000
 #define H5_METALLIC_CYMBAL_HP_HZ 25
 
 /* The resonance of the noise filter. It is an engine constant too. */
@@ -89,6 +82,10 @@ static const int32_t h5_metallic_amp[H5_METALLIC_BANK] = {
 /* The limits of the noise filter's cutoff, Hz. */
 #define H5_METALLIC_FC_MIN_HZ 10
 #define H5_METALLIC_FC_MAX_HZ 14000
+
+/* The high-pass coefficient is a Q30 one-pole weight. Keep it just below
+ * unity so an extreme corner at a low sample rate cannot make it unstable. */
+#define H5_METALLIC_HP_K_MAX ((int32_t)0x3FFFFFFF)
 
 /* The drive of the saturation stage, per voice. It is an engine constant:
  * the faceplate has no drive of its own. */
@@ -244,7 +241,7 @@ static void h5_metallic_apply(void *engine,
     const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate)
 {
     struct h5_metallic_s *m = (struct h5_metallic_s *)engine;
-    int32_t pitch_scale, fc_lo, fc_hi, hp_hz, i;
+    int32_t pitch_scale, fc_lo, fc_hi, hp_q16, hp_k, i;
     int64_t acc;
 
     if (sample_rate == 0u) {
@@ -254,29 +251,44 @@ static void h5_metallic_apply(void *engine,
     pitch_scale = params[H5_PARAM_TONE_PITCH];
 
     m->decay_q16 = params[H5_PARAM_DECAY];
-    m->bend_q16 = params[H5_PARAM_BEND];
-    m->sweep_q16 = params[H5_PARAM_SWEEP];
     m->bell_q16 = params[H5_PARAM_BELL_CYMBAL];
     m->noise_tone_q16 = params[H5_PARAM_NOISE_TONE];
+
+    if (m->has_open) {
+        /* The Hi-hat sets both edges of the noise filter: Noise is the
+         * low-pass cutoff and Noise Body is the high-pass corner. Bend and
+         * Sweep are fixed at zero. */
+        m->bend_q16 = 0;
+        m->sweep_q16 = 0;
+        m->filter_freq_q16 = params[H5_PARAM_NOISE_PITCH];
+        hp_q16 = params[H5_PARAM_NOISE_BODY];
+    } else {
+        m->bend_q16 = params[H5_PARAM_BEND];
+        m->sweep_q16 = params[H5_PARAM_SWEEP];
+        m->filter_freq_q16 = H5_METALLIC_CYMBAL_FILTER_HZ * H5_Q16_ONE;
+        hp_q16 = H5_METALLIC_CYMBAL_HP_HZ * H5_Q16_ONE;
+    }
 
     /* The Bell/Cymbal balance is the metal/noise balance, and the Noise/Tone
      * balance is the tone amount of the noise path. Both follow the steep
      * x^0.7 law of the engine. */
     h5_metallic_balance_apply(m);
 
-    m->filter_freq_q16 = m->has_open
-        ? H5_METALLIC_HIHAT_FILTER_HZ * H5_Q16_ONE
-        : H5_METALLIC_CYMBAL_FILTER_HZ * H5_Q16_ONE;
     /* The cutoff of a zero sweep does not depend on the envelope, so it is
      * computed once here instead of on every sample. With a zero sweep the
      * contour factor is exactly 1, so this is the clamped base cutoff. */
     m->fc_const_q16 = h5_metallic_cutoff(m, 0);
 
     /* The high-pass on the noise: two poles at the voice's corner. Each
-     * coefficient is 1 - exp(-2*pi*fc/sr), in Q30. */
-    hp_hz = m->has_open ? H5_METALLIC_HIHAT_HP_HZ : H5_METALLIC_CYMBAL_HP_HZ;
-    m->hp_k_q30 = (int32_t)(((uint64_t)hp_hz * 6747485820ull)
-        / (uint64_t)sample_rate);
+     * coefficient is 1 - exp(-2*pi*fc/sr), in Q30, computed from the corner
+     * in Q16 so the parameter needs no separate conversion. The clamp keeps
+     * the coefficient below unity at low sample rates. */
+    hp_k = (int32_t)(((uint64_t)hp_q16 * 6747485820ull)
+        / ((uint64_t)sample_rate << 16));
+    if (hp_k > H5_METALLIC_HP_K_MAX) {
+        hp_k = H5_METALLIC_HP_K_MAX;
+    }
+    m->hp_k_q30 = hp_k;
 
     /* Rebuild the bank increments at the new Tone Pitch.
      * cycles/sample = f / sr; the 28-bit phase adds 2^28, and the bank

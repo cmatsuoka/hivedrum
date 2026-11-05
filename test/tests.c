@@ -1712,9 +1712,63 @@ static int metallic_bend(h5_voice voice, h5_instrument instrument)
     return 0;
 }
 
+#if H5_TEST_HIHAT
+/* One of the Hi-hat's noise-filter edges changes the render and never goes
+ * silent at either end of its range. */
+static int metallic_noise_edge(h5_param param, int32_t low, int32_t high,
+    const char *name)
+{
+    h5_context ctx = h5_create_context(TEST_RATE);
+    const size_t frames = frames_for_ms(TEST_RATE, 300u);
+    int16_t *dark;
+    int16_t *bright;
+    int differs;
+    int32_t dark_peak;
+    int32_t bright_peak;
+
+    if (ctx == 0) {
+        fail("could not create a context");
+        return -1;
+    }
+
+    h5_reset(ctx);
+    set_metallic(ctx, H5_VOICE_HIHAT, param, low);
+    h5_trigger(ctx, H5_INSTR_HIHAT_CLOSED);
+    dark = render(ctx, frames);
+
+    h5_reset(ctx);
+    set_metallic(ctx, H5_VOICE_HIHAT, param, high);
+    h5_trigger(ctx, H5_INSTR_HIHAT_CLOSED);
+    bright = render(ctx, frames);
+
+    if (dark == 0 || bright == 0) {
+        fail("out of memory");
+        free(dark);
+        free(bright);
+        h5_destroy_context(ctx);
+        return -1;
+    }
+
+    differs = memcmp(dark, bright, frames * 2u * sizeof(int16_t)) != 0;
+    dark_peak = peak_abs(dark, 0u, frames);
+    bright_peak = peak_abs(bright, 0u, frames);
+
+    if (!differs) {
+        fail("the Hi-hat noise edge does not change the render");
+    } else if (dark_peak < 1000 || bright_peak < 1000) {
+        fail("an end of the Hi-hat noise edge range is silent");
+    } else {
+        printf("ok  : the Hi-hat %s changes the render\n", name);
+    }
+
+    free(dark);
+    free(bright);
+    h5_destroy_context(ctx);
+    return 0;
+}
+
 /* The open Hi-hat rings for longer than the closed one; both are the same
  * voice. */
-#if H5_TEST_HIHAT
 static int command_hihat_open_close(void)
 {
     h5_context ctx = h5_create_context(TEST_RATE);
@@ -1854,7 +1908,12 @@ int command_hihat(void)
     if (metallic_bell_cymbal(H5_VOICE_HIHAT, H5_INSTR_HIHAT_CLOSED) != 0) {
         result = -1;
     }
-    if (metallic_bend(H5_VOICE_HIHAT, H5_INSTR_HIHAT_CLOSED) != 0) {
+    if (metallic_noise_edge(H5_PARAM_NOISE_PITCH,
+            2000 * H5_Q16_ONE, 14000 * H5_Q16_ONE, "Noise") != 0) {
+        result = -1;
+    }
+    if (metallic_noise_edge(H5_PARAM_NOISE_BODY,
+            500 * H5_Q16_ONE, 5000 * H5_Q16_ONE, "Noise Body") != 0) {
         result = -1;
     }
     if (command_hihat_open_close() != 0) {

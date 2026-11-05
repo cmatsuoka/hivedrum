@@ -37,6 +37,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_DECAY]       = { F(1, 10), F(2, 1), F(3, 10) },
         [H5_PARAM_NOISE_TONE]  = { 0,      Q,        F(95, 100) },
         [H5_PARAM_CLICK_TONE]  = { 0,      Q,        F(1, 2) },
+        [H5_PARAM_NOISE_BODY]  = OFF,
         [H5_PARAM_VOLUME]      = VOL(Q),
         [H5_PARAM_PAN]         = { 0,      Q,        Q / 2 },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
@@ -49,6 +50,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_DECAY]       = { F(2, 10), F(5, 1), 38011 },
         [H5_PARAM_NOISE_TONE]  = { 0,      Q,        18350 },
         [H5_PARAM_CLICK_TONE]  = { 0,      Q,        51773 },
+        [H5_PARAM_NOISE_BODY]  = OFF,
         [H5_PARAM_VOLUME]      = VOL(Q),
         [H5_PARAM_PAN]         = { 0,      Q,        32768 },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
@@ -61,6 +63,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_DECAY]       = { F(2, 10), F(5, 1), F(71, 100) },
         [H5_PARAM_NOISE_TONE]  = { 0,      Q,        F(13, 20) },
         [H5_PARAM_CLICK_TONE]  = { 0,      Q,        F(37, 50) },
+        [H5_PARAM_NOISE_BODY]  = OFF,
         [H5_PARAM_VOLUME]      = VOL(Q),
         [H5_PARAM_PAN]         = { 0,      Q,        F(3, 5) },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
@@ -73,6 +76,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_DECAY]       = { F(2, 10), F(5, 1), F(73, 100) },
         [H5_PARAM_NOISE_TONE]  = { 0,      Q,        F(13, 20) },
         [H5_PARAM_CLICK_TONE]  = { 0,      Q,        F(18, 25) },
+        [H5_PARAM_NOISE_BODY]  = OFF,
         [H5_PARAM_VOLUME]      = VOL(Q),
         [H5_PARAM_PAN]         = { 0,      Q,        Q / 2 },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
@@ -85,16 +89,19 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_DECAY]       = { F(2, 10), F(5, 1), F(3, 4) },
         [H5_PARAM_NOISE_TONE]  = { 0,      Q,        F(13, 20) },
         [H5_PARAM_CLICK_TONE]  = { 0,      Q,        F(7, 10) },
+        [H5_PARAM_NOISE_BODY]  = OFF,
         [H5_PARAM_VOLUME]      = VOL(Q),
         [H5_PARAM_PAN]         = { 0,      Q,        F(2, 5) },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
         [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
     },
-    /* The metallic voices have their own faceplate: Sweep, Tone Pitch,
-     * Bend, Decay, Noise/Tone and Bell/Cymbal. NOISE_PITCH and CLICK_TONE
-     * are drum controls and are not supported here. The Tone Pitch scales
-     * the metallic bank (0..1) rather than naming a frequency. Defaults
-     * follow the shipped preset. */
+    /* The metallic voices have their own faceplates. The Cymbal keeps
+     * Sweep, Tone Pitch, Bend, Decay, Noise/Tone and Bell/Cymbal. The
+     * Hi-hat exposes Noise (the noise low-pass cutoff), Tone Pitch, Decay,
+     * Noise/Tone, Bell/Cymbal and Noise Body (the noise high-pass corner);
+     * its Bend and Sweep are fixed at zero. The Tone Pitch scales the
+     * metallic bank (0..1) rather than naming a frequency. Defaults follow
+     * the shipped preset. */
 #ifdef LIBHIVE_ENGINE_CYMBAL
     [H5_VOICE_CYMBAL] = {
         [H5_PARAM_NOISE_PITCH] = OFF,
@@ -103,6 +110,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_DECAY]       = { F(1, 10), F(3, 1), I(3) },
         [H5_PARAM_NOISE_TONE]  = { 0,      Q,        F(69, 100) },
         [H5_PARAM_CLICK_TONE]  = OFF,
+        [H5_PARAM_NOISE_BODY]  = OFF,
         [H5_PARAM_SWEEP]       = { -Q,     Q,        F(7, 10) },
         [H5_PARAM_BELL_CYMBAL] = { 0,      Q,        F(14, 100) },
         [H5_PARAM_VOLUME]      = VOL(Q),
@@ -118,6 +126,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_DECAY]       = OFF,
         [H5_PARAM_NOISE_TONE]  = OFF,
         [H5_PARAM_CLICK_TONE]  = OFF,
+        [H5_PARAM_NOISE_BODY]  = OFF,
         [H5_PARAM_SWEEP]       = OFF,
         [H5_PARAM_BELL_CYMBAL] = OFF,
         [H5_PARAM_VOLUME]      = OFF,
@@ -128,13 +137,14 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
 #endif
 #ifdef LIBHIVE_ENGINE_HIHAT
     [H5_VOICE_HIHAT] = {
-        [H5_PARAM_NOISE_PITCH] = OFF,
+        [H5_PARAM_NOISE_PITCH] = { I(2000), I(14000), I(12000) },
         [H5_PARAM_TONE_PITCH]  = { 0,      Q,        Q },
-        [H5_PARAM_BEND]        = { I(-48), I(48),    0 },
+        [H5_PARAM_BEND]        = OFF,
         [H5_PARAM_DECAY]       = { F(1, 10), F(3, 2),    F(22, 100) },
         [H5_PARAM_NOISE_TONE]  = { 0,      Q,        F(11, 100) },
         [H5_PARAM_CLICK_TONE]  = OFF,
-        [H5_PARAM_SWEEP]       = { -Q,     Q,        F(1, 2) },
+        [H5_PARAM_SWEEP]       = OFF,
+        [H5_PARAM_NOISE_BODY]  = { I(500), I(5000), I(3000) },
         [H5_PARAM_BELL_CYMBAL] = { 0,      Q,        F(13, 100) },
         [H5_PARAM_VOLUME]      = VOL(2 * F(49, 100)),
         [H5_PARAM_PAN]         = { 0,      Q,        Q / 2 },
@@ -149,6 +159,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_DECAY]       = OFF,
         [H5_PARAM_NOISE_TONE]  = OFF,
         [H5_PARAM_CLICK_TONE]  = OFF,
+        [H5_PARAM_NOISE_BODY]  = OFF,
         [H5_PARAM_SWEEP]       = OFF,
         [H5_PARAM_BELL_CYMBAL] = OFF,
         [H5_PARAM_VOLUME]      = OFF,

@@ -149,14 +149,15 @@ signed semitones for bend, and a 0..1 scalar for balance controls.
 
 | Parameter | Applies to |
 | --- | --- |
-| `H5_PARAM_NOISE_PITCH` | Kick, Snare, Toms |
+| `H5_PARAM_NOISE_PITCH` | Kick, Snare, Toms, Hi-hat (noise brightness) |
 | `H5_PARAM_TONE_PITCH` | All voices |
-| `H5_PARAM_BEND` | All voices |
+| `H5_PARAM_BEND` | Kick, Snare, Toms, Cymbal |
 | `H5_PARAM_DECAY` | All voices |
 | `H5_PARAM_NOISE_TONE` | All voices |
 | `H5_PARAM_CLICK_TONE` | Kick, Snare, Toms |
-| `H5_PARAM_SWEEP` | Cymbal, Hi-hat |
+| `H5_PARAM_SWEEP` | Cymbal |
 | `H5_PARAM_BELL_CYMBAL` | Cymbal, Hi-hat |
+| `H5_PARAM_NOISE_BODY` | Hi-hat (noise high-pass corner) |
 | `H5_PARAM_VOLUME` | All voices (mixer level) |
 | `H5_PARAM_PAN` | All voices (mixer pan) |
 | `H5_PARAM_SENSITIVITY` | All voices (strike sensitivity) |

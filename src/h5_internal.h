@@ -413,8 +413,10 @@ struct h5_metallic_s {
     int32_t drive_q16;        /* the saturation blend */
     int32_t decay_q16;        /* the release time, seconds Q16 */
     int32_t hp_k_q30;         /* the noise high-pass coefficient */
-    int32_t hp_state;         /* the noise high-pass state, Q31 */
-    int32_t hp_state2;        /* the second noise high-pass state, Q31 */
+    int32_t hp_state;         /* the noise high-pass state (half scale) */
+    int32_t hp_state2;        /* its second pole's state (half scale) */
+    int32_t wet_hp_state;     /* the saturation path's high-pass state, Q31 */
+    int32_t wet_hp_state2;    /* its second high-pass state, Q31 */
     int32_t fc_const_q16;     /* the noise filter's cutoff when the sweep is 0 */
     int32_t open_q16;         /* the Open amount, seconds Q16 */
     uint8_t open;               /* Hi-hat: the hit was triggered open */

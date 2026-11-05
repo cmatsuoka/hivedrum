@@ -6,7 +6,7 @@
  * The flow is:
  *
  *   metal = sum_k A_k * tri_k                   10 triangle oscillators
- *   noise = lcg -> 25 Hz high-pass -> resonant low-pass
+ *   noise = lcg -> two-pole high-pass -> resonant low-pass
  *   env_m = AR(fixed attack, Decay release)      the metal envelope
  *   env_n = AR(fixed attack, Decay+Open release)  the noise envelope
  *   mix   = metal * BellCymbal^0.7 * env_m^5
@@ -26,10 +26,12 @@
  *     Click control, and it works with the steep x^0.7 law. The Noise/Tone
  *     balance is the tone amount of the noise path: 1 leaves no noise at
  *     all, 0 leaves all of it.
- *   - The noise is the same LCG the drum voices use, with a 25 Hz high-pass
- *     and a resonant low-pass whose cutoff follows the envelope. The Sweep
- *     is signed: a positive sweep closes the filter as the sound dies, a
- *     negative one opens it, so the tail is either dull or bright.
+ *   - The noise is the same LCG the drum voices use, with a two-pole
+ *     high-pass and a resonant low-pass whose cutoff follows the envelope.
+ *     The high-pass corner is per voice: 25 Hz on the Cymbal, 3 kHz on the
+ *     Hi-hat, whose noise keeps only the sibilant band above the corner.
+ *     The Sweep is signed: a positive sweep closes the filter as the sound
+ *     dies, a negative one opens it, so the tail is either dull or bright.
  *   - The attack of both envelopes is fixed in samples: 1 ms for the metal
  *     and 5 ms for the noise of the Hi-hat, 20 ms for both of the Cymbal.
  *     The Decay control is the release of the metal envelope; the release of
@@ -69,12 +71,17 @@ static const int32_t h5_metallic_amp[H5_METALLIC_BANK] = {
 #define H5_METALLIC_NOISE_WEIGHT_Q16 (51118) /* 0.78 */
 
 /* The cutoff of the noise filter's base, Hz. It is an engine constant: the
- * faceplate of the metallic modules has no filter cutoff of its own. */
-#define H5_METALLIC_HIHAT_FILTER_HZ 16000
+ * faceplate of the metallic modules has no filter cutoff of its own. The
+ * Hi-hat's base sits above the Cymbal's, so the closed hit keeps its sizzle
+ * while the contour darkens the wash. */
+#define H5_METALLIC_HIHAT_FILTER_HZ 12000
 #define H5_METALLIC_CYMBAL_FILTER_HZ 9547
 
-/* The corner of the noise high-pass, Hz. */
-#define H5_METALLIC_HP_HZ 25
+/* The corner of the noise high-pass, per voice, Hz. The Hi-hat's corner
+ * sits in the sibilant band, so its noise carries only the sizzle above
+ * it; the Cymbal's noise keeps its full range down to the subsonic corner. */
+#define H5_METALLIC_HIHAT_HP_HZ 3000
+#define H5_METALLIC_CYMBAL_HP_HZ 25
 
 /* The resonance of the noise filter. It is an engine constant too. */
 #define H5_METALLIC_RESONANCE_Q16 H5_Q16_ONE
@@ -105,7 +112,7 @@ static const int32_t h5_metallic_amp[H5_METALLIC_BANK] = {
 #define H5_METALLIC_HIHAT_METAL_DECAY_Q16 (8529) /* 0.13 */
 #define H5_METALLIC_HIHAT_METAL_GAIN_Q16 (3277) /* 0.05 */
 #define H5_METALLIC_HIHAT_NOISE_GAIN_Q16 (6554) /* 0.10 */
-#define H5_METALLIC_HIHAT_NOISE_OPEN_Q16 H5_Q16_ONE
+#define H5_METALLIC_HIHAT_NOISE_OPEN_Q16 (45875) /* 0.70 */
 #define H5_METALLIC_CYMBAL_DECAY_Q16 (19661) /* 0.30 */
 #define H5_METALLIC_CYMBAL_DECAY_SCALE_Q16 (16384) /* 0.25 */
 
@@ -200,7 +207,7 @@ static void h5_metallic_apply(void *engine,
     const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate)
 {
     struct h5_metallic_s *m = (struct h5_metallic_s *)engine;
-    int32_t pitch_scale, fc_lo, fc_hi, i;
+    int32_t pitch_scale, fc_lo, fc_hi, hp_hz, i;
     int64_t acc;
 
     if (sample_rate == 0u) {
@@ -230,9 +237,10 @@ static void h5_metallic_apply(void *engine,
      * contour factor is exactly 1, so this is the clamped base cutoff. */
     m->fc_const_q16 = h5_metallic_cutoff(m, 0);
 
-    /* The high-pass on the noise: one pole at 25 Hz. Its coefficient is
-     * 1 - exp(-2*pi*fc/sr), in Q30. */
-    m->hp_k_q30 = (int32_t)(((uint64_t)H5_METALLIC_HP_HZ * 6747485820ull)
+    /* The high-pass on the noise: two poles at the voice's corner. Each
+     * coefficient is 1 - exp(-2*pi*fc/sr), in Q30. */
+    hp_hz = m->has_open ? H5_METALLIC_HIHAT_HP_HZ : H5_METALLIC_CYMBAL_HP_HZ;
+    m->hp_k_q30 = (int32_t)(((uint64_t)hp_hz * 6747485820ull)
         / (uint64_t)sample_rate);
 
     /* Rebuild the bank increments at the new Tone Pitch.
@@ -286,6 +294,8 @@ void h5_metallic_setup(void *engine, h5_voice voice,
     m->has_open = (voice == H5_VOICE_HIHAT) ? 1u : 0u;
     m->hp_state = 0;
     m->hp_state2 = 0;
+    m->wet_hp_state = 0;
+    m->wet_hp_state2 = 0;
     m->head.active = 0u;
     m->vel.level_q16 = H5_Q16_ONE;
     m->vel.depth_q16 = H5_Q16_ONE;
@@ -330,14 +340,16 @@ void h5_metallic_trigger(void *engine, int32_t level_q16,
     h5_svf_reset(&m->noise_filter2);
     m->hp_state = 0;
     m->hp_state2 = 0;
+    m->wet_hp_state = 0;
+    m->wet_hp_state2 = 0;
     m->head.active = 1u;
 }
 
 /* The saturation stage: a dry path and a saturated path in parallel. */
-static int32_t h5_metallic_shaper(const struct h5_metallic_s *m, int32_t x)
+static int32_t h5_metallic_shaper(struct h5_metallic_s *m, int32_t x)
 {
     int64_t arg;
-    int32_t wet, dry;
+    int32_t wet, dry, lp;
 
     /* arg = 2*pi*(1+Drive)*mix, clamped to the shaper's input range. The
      * scale fits an int32_t, so the product stays on the wide-multiply
@@ -352,6 +364,20 @@ static int32_t h5_metallic_shaper(const struct h5_metallic_s *m, int32_t x)
 
     /* The soft clipper reads a Q31 argument of at most 1. */
     wet = h5_softclip_q31(h5_sat_i32((int64_t)arg << 3)) >> 2;
+
+    /* The clipper's products of a broadband mix reach below the voice's
+     * own corner, so the wet path follows the same high-pass as the noise:
+     * two poles at the voice's corner keep the grit inside the band the
+     * voice plays in. */
+    lp = m->wet_hp_state + h5_mul_q30(h5_sat_sub_q31(wet, m->wet_hp_state),
+        m->hp_k_q30);
+    m->wet_hp_state = lp;
+    wet = h5_sat_sub_q31(wet, lp);
+    lp = m->wet_hp_state2
+        + h5_mul_q30(h5_sat_sub_q31(wet, m->wet_hp_state2), m->hp_k_q30);
+    m->wet_hp_state2 = lp;
+    wet = h5_sat_sub_q31(wet, lp);
+
     dry = h5_mul_q16(x, H5_Q16_ONE - m->drive_q16);
 
     return h5_sat_add_q31(dry, h5_mul_q16(wet, m->drive_q16));
@@ -405,9 +431,12 @@ int32_t h5_metallic_process(void *engine)
     metal = h5_mul_q16(metal, m->metal_gain_q16);
     metal = h5_mul_q30(metal, env_m5);
 
-    /* The noise: the LCG, a high-pass at 25 Hz and the resonant low-pass
-     * whose cutoff follows the envelope. */
-    u = h5_noise_next(&m->noise);
+    /* The noise: the LCG, a two-pole high-pass at the voice's corner and
+     * the resonant low-pass whose cutoff follows the envelope. The poles
+     * run at half scale: the innovation of a fast high-pass exceeds one on
+     * a full-scale signal, and the half-scale loop keeps it inside the Q31
+     * range. The scale is restored after the second pole. */
+    u = h5_noise_next(&m->noise) >> 1;
     lp = m->hp_state + h5_mul_q30(h5_sat_sub_q31(u, m->hp_state),
         m->hp_k_q30);
     m->hp_state = lp;
@@ -415,7 +444,7 @@ int32_t h5_metallic_process(void *engine)
     lp = m->hp_state2 + h5_mul_q30(h5_sat_sub_q31(u, m->hp_state2),
         m->hp_k_q30);
     m->hp_state2 = lp;
-    u = h5_sat_sub_q31(u, lp);
+    u = h5_sat_i32((int64_t)h5_sat_sub_q31(u, lp) << 1);
 
     if (m->has_open) {
         /* The Hi-hat: the noise envelope is raised to the fourth power,

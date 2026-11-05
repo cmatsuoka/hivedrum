@@ -134,7 +134,7 @@ instruments:
 | `H5_INSTR_TOM_1` / `H5_INSTR_TOM_2` / `H5_INSTR_TOM_3` | Tom 1 / Tom 2 / Tom 3 | |
 | `H5_INSTR_CYMBAL` | Cymbal | |
 | `H5_INSTR_HIHAT_CLOSED` | Hi-hat | release as set |
-| `H5_INSTR_HIHAT_OPEN` | Hi-hat | a second longer release |
+| `H5_INSTR_HIHAT_OPEN` | Hi-hat | a 0.7 s longer release |
 
 Triggering the closed instrument while an open hat is sounding restarts the
 shared voice, which chokes it. Both Hi-hat instruments share the Hi-hat

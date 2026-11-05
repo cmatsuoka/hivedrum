@@ -44,7 +44,7 @@
  *
  *   - Strike level: every hit carries a strike level, taken from the MIDI
  *     velocity. It scales the level of the whole mix, the depth of the
- *     pitch envelope (0.1 + 0.9*g of the Bend setting), the noise
+ *     pitch envelope (0.05 + 0.95*g of the Bend setting), the noise
  *     cutoff sweep (2000*g^4 Hz) and the weight of the transient
  *     (0.3 + 0.7*g^4 on the Kick, 0.4 + 0.6*g^4 on the Snare and the
  *     Tom), with g the strike level. The pitch curve and the swept-filter
@@ -80,14 +80,14 @@
  * power of the strike level. */
 #define H5_NOISE_SWEEP_Q16 (2000 * H5_Q16_ONE)
 
-/* The velocity laws. The pitch envelope sweeps 0.1 + 0.9*g of the Bend
+/* The velocity laws. The pitch envelope sweeps 0.05 + 0.95*g of the Bend
  * setting, with g the strike level (0..1), so the bend tracks the strike
- * across the whole range. The strike level is raised to the fourth power for
- * the noise cutoff sweep (2000*g^4 Hz) and the transient weight, which is
- * floor + (1-floor)*g^4 with a floor of 0.3 for the Kick and 0.4 for the
- * Snare and the Tom. */
-#define H5_VEL_DEPTH_BASE_Q16 (10 * H5_Q16_ONE / 100) /* 0.1 */
-#define H5_VEL_DEPTH_GAIN_Q16 (90 * H5_Q16_ONE / 100) /* 0.9 */
+ * across the whole range and falls further on soft strikes. The strike level
+ * is raised to the fourth power for the noise cutoff sweep (2000*g^4 Hz) and
+ * the transient weight, which is floor + (1-floor)*g^4 with a floor of 0.3
+ * for the Kick and 0.4 for the Snare and the Tom. */
+#define H5_VEL_DEPTH_BASE_Q16 (5 * H5_Q16_ONE / 100)  /* 0.05 */
+#define H5_VEL_DEPTH_GAIN_Q16 (95 * H5_Q16_ONE / 100) /* 0.95 */
 #define H5_KICK_CLICK_FLOOR_Q16 (3 * H5_Q16_ONE / 10)  /* 0.3 */
 #define H5_STD_CLICK_FLOOR_Q16 (4 * H5_Q16_ONE / 10)   /* 0.4 */
 
@@ -280,8 +280,9 @@ static void h5_velocity_compute(struct h5_velocity_s *vel, int32_t level_q16,
     int32_t rest = H5_Q16_ONE - g4;
 
     vel->level_q16 = level_q16;
-    /* The depth follows the strike level linearly, so the bend changes
-     * audibly across the whole velocity range instead of only near the top. */
+    /* The depth follows the strike level linearly, with a short floor, so the
+     * bend changes audibly across the whole velocity range and drops further
+     * on soft strikes instead of only near the top. */
     vel->depth_q16 = h5_sat_i32((int64_t)H5_VEL_DEPTH_BASE_Q16
         + h5_scale_q16(H5_VEL_DEPTH_GAIN_Q16, level_q16));
     vel->sweep_q16 = g4;

@@ -155,6 +155,7 @@ signed semitones for bend, and a 0..1 scalar for balance controls.
 | `H5_PARAM_DECAY` | All voices |
 | `H5_PARAM_NOISE_TONE` | All voices |
 | `H5_PARAM_CLICK_TONE` | Kick, Snare, Toms |
+| `H5_PARAM_DRIVE` | Kick, Snare, Toms (sine/triangle blend) |
 | `H5_PARAM_SWEEP` | Cymbal |
 | `H5_PARAM_BELL_CYMBAL` | Cymbal, Hi-hat |
 | `H5_PARAM_NOISE_BODY` | Hi-hat (noise high-pass corner) |

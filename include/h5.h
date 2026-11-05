@@ -24,7 +24,7 @@ extern "C" {
 /* Library version. major/minor/patch are packed as 0x00MMmmpp.
  * The plain integer constants keep H5_VERSION_NUMBER usable in #if. */
 #define H5_VERSION_MAJOR 0
-#define H5_VERSION_MINOR 7
+#define H5_VERSION_MINOR 8
 #define H5_VERSION_PATCH 0
 #define H5_VERSION_NUMBER \
     ((H5_VERSION_MAJOR << 16) | (H5_VERSION_MINOR << 8) | H5_VERSION_PATCH)
@@ -86,7 +86,9 @@ typedef enum {
 
 /* Public sound parameters. The standard drum voices (Kick, Snare, Tom 1,
  * Tom 2, Tom 3) share the six faceplate controls Noise, Tone, Bend, Decay,
- * Noise/Tone and Click/Drum. The metallic voices have their own faceplates.
+ * Noise/Tone and Click/Drum, plus the Drive control that blends the sine and
+ * triangle branches of the tone core. The metallic voices have their own
+ * faceplates.
  * The Cymbal supports Sweep, Tone Pitch, Bend, Decay, Noise/Tone and
  * Bell/Cymbal. The Hi-hat supports Noise, Tone Pitch, Decay, Noise/Tone,
  * Bell/Cymbal and Noise Body: its Bend and Sweep are fixed at zero, and its
@@ -110,6 +112,7 @@ typedef enum {
     H5_PARAM_SENSITIVITY,
     H5_PARAM_FX_SEND,
     H5_PARAM_NOISE_BODY, /* metallic noise high-pass corner; Hi-hat only */
+    H5_PARAM_DRIVE,      /* sine/triangle blend of the drum tone core */
     H5_PARAM_COUNT
 } h5_param;
 

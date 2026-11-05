@@ -454,6 +454,60 @@ static int command_tom_simultaneous(h5_context ctx)
     return result;
 }
 
+/* Drive blends the sine and triangle branches of the tone core. The two
+ * extremes must sound different and neither may be silent. */
+static int drum_drive(h5_voice voice, h5_instrument instrument,
+    const char *name)
+{
+    h5_context ctx = h5_create_context(TEST_RATE);
+    const size_t frames = frames_for_ms(TEST_RATE, 300u);
+    int16_t *sine;
+    int16_t *triangle;
+    int differs;
+    int32_t sine_peak;
+    int32_t triangle_peak;
+
+    if (ctx == 0) {
+        fail("could not create a context");
+        return -1;
+    }
+
+    h5_reset(ctx);
+    h5_set_param(ctx, voice, H5_PARAM_DRIVE, 0);
+    h5_trigger(ctx, instrument);
+    sine = render(ctx, frames);
+
+    h5_reset(ctx);
+    h5_set_param(ctx, voice, H5_PARAM_DRIVE, H5_Q16_ONE);
+    h5_trigger(ctx, instrument);
+    triangle = render(ctx, frames);
+
+    if (sine == 0 || triangle == 0) {
+        fail("out of memory");
+        free(sine);
+        free(triangle);
+        h5_destroy_context(ctx);
+        return -1;
+    }
+
+    differs = memcmp(sine, triangle, frames * 2u * sizeof(int16_t)) != 0;
+    sine_peak = peak_abs(sine, 0u, frames);
+    triangle_peak = peak_abs(triangle, 0u, frames);
+
+    if (!differs) {
+        fail("the Drive control does not change the tone core");
+    } else if (sine_peak < 1000 || triangle_peak < 1000) {
+        fail("an end of the Drive range is silent");
+    } else {
+        printf("ok  : the %s Drive blends the tone core\n", name);
+    }
+
+    free(sine);
+    free(triangle);
+    h5_destroy_context(ctx);
+    return 0;
+}
+
 int command_tom(void)
 {
     h5_context ctx = h5_create_context(TEST_RATE);
@@ -467,7 +521,8 @@ int command_tom(void)
         command_tom_pitch(ctx) != 0 ||
         command_tom_decay(ctx) != 0 ||
         command_tom_noise(ctx) != 0 ||
-        command_tom_simultaneous(ctx) != 0) {
+        command_tom_simultaneous(ctx) != 0 ||
+        drum_drive(H5_VOICE_TOM_1, H5_INSTR_TOM_1, "Tom") != 0) {
         h5_destroy_context(ctx);
         return 1;
     }
@@ -793,7 +848,8 @@ int command_kick(void)
         command_kick_bend(ctx) != 0 ||
         command_kick_decay(ctx) != 0 ||
         command_kick_noise(ctx) != 0 ||
-        command_kick_click() != 0) {
+        command_kick_click() != 0 ||
+        drum_drive(H5_VOICE_KICK, H5_INSTR_KICK, "Kick") != 0) {
         h5_destroy_context(ctx);
         return 1;
     }
@@ -1075,7 +1131,8 @@ int command_snare(void)
         command_snare_pitch(ctx) != 0 ||
         command_snare_decay(ctx) != 0 ||
         command_snare_noise(ctx) != 0 ||
-        command_snare_controls() != 0) {
+        command_snare_controls() != 0 ||
+        drum_drive(H5_VOICE_SNARE, H5_INSTR_SNARE, "Snare") != 0) {
         h5_destroy_context(ctx);
         return 1;
     }

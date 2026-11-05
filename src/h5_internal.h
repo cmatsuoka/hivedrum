@@ -330,6 +330,7 @@ struct h5_kick_s {
     int32_t base_inc;        /* phase28 increment at TonePitch, no bend */
     int32_t bend_q16;        /* pitch sweep depth in 12ths of an octave */
     int32_t noise_pitch_q16; /* noise filter base cutoff, Hz Q16 */
+    int32_t drive_q16;       /* sine/triangle blend weight, 0..1 */
     int32_t tone_gain_q16;   /* 0.85 * NoiseTone^0.125 * (1-Click)^0.25 */
     int32_t noise_gain_q16;  /* 0.4 * (1-NoiseTone)^0.7 * (1-Click)^0.7 */
     int32_t click_gain_q16;  /* 0.66 * Click^0.25 */
@@ -361,6 +362,7 @@ struct h5_tom_s {
     int32_t base_inc;      /* phase28 increment at TonePitch, no bend */
     int32_t bend_q16;        /* pitch sweep depth in 12ths of an octave */
     int32_t noise_pitch_q16; /* noise filter base cutoff, Hz Q16 */
+    int32_t drive_q16;       /* sine/triangle blend weight, 0..1 */
     int32_t filter_bend_q16; /* per-instance noise-cutoff bend depth */
     int32_t tone_gain_q16;   /* 0.46 * NoiseTone^0.125 * (1-Click)^0.25 */
     int32_t noise_gain_q16;  /* 0.45 * (1-NoiseTone)^0.7 * (1-Click)^0.7 */
@@ -385,6 +387,7 @@ struct h5_snare_s {
     int32_t base_inc;          /* phase28 increment at TonePitch, no bend */
     int32_t bend_q16;          /* pitch sweep depth in 12ths of an octave */
     int32_t noise_pitch_q16;   /* output low-pass base cutoff */
+    int32_t drive_q16;         /* sine/triangle blend weight, 0..1 */
     int32_t tone_gain_q16;     /* NoiseTone^0.125 * (1-Click)^0.25 */
     int32_t noise_gain_q16;    /* 0.3 * (1-NoiseTone)^0.7 * (1-Click)^0.7 */
     int32_t click_gain_q16;    /* 63/80 * Click^0.25 */

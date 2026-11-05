@@ -468,6 +468,40 @@ static int command_api(void)
         }
     }
 
+    /* Drive is a public control on every drum voice, defaulting to the
+     * engine's original sine/triangle blend. */
+    {
+        static const h5_voice drum_voices[] = {
+            H5_VOICE_KICK, H5_VOICE_SNARE, H5_VOICE_TOM_1,
+            H5_VOICE_TOM_2, H5_VOICE_TOM_3
+        };
+        static const int32_t drum_drive_default[] = {
+            45 * H5_Q16_ONE / 100, 22 * H5_Q16_ONE / 100,
+            45 * H5_Q16_ONE / 100, 45 * H5_Q16_ONE / 100,
+            45 * H5_Q16_ONE / 100
+        };
+        size_t i;
+        int missing = 0;
+
+        for (i = 0u; i < sizeof(drum_voices) / sizeof(drum_voices[0]); i++) {
+            if (!h5_param_supported(drum_voices[i], H5_PARAM_DRIVE)
+                || h5_get_param((h5_context)ctx, drum_voices[i],
+                        H5_PARAM_DRIVE, &value) != H5_OK
+                || value != drum_drive_default[i]) {
+                missing++;
+            }
+        }
+        if (metallic_param_supported(H5_VOICE_CYMBAL, H5_PARAM_DRIVE) ||
+            metallic_param_supported(H5_VOICE_HIHAT, H5_PARAM_DRIVE)) {
+            missing++;
+        }
+        if (missing != 0) {
+            fail("Drive is not a drum control with the original blend default");
+        } else {
+            ok("Drive is a drum control with the original blend default");
+        }
+    }
+
     /* Mixer set/get round trip and defaults. */
     status = h5_set_instrument_volume((h5_context)ctx, H5_INSTR_KICK,
         H5_Q16_ONE);

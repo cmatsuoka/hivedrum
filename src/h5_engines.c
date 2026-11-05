@@ -38,9 +38,10 @@
  *     leaves the mix through a fixed high-pass, so the shell tone and the
  *     click burst keep their full bandwidth while the wire rattle is shaped.
  *
- * Drive, Resonance and Gain are engine constants (0.13, 1.0, 1.0), not
- * exposed parameters. Each trigger restarts the oscillator phase, the
- * envelopes and the filters; the noise generator free-runs.
+ * Drive is the public blend into the triangle branch. Resonance and Gain
+ * are engine constants (1.0, 1.0), not exposed parameters. Each trigger
+ * restarts the oscillator phase, the envelopes and the filters; the noise
+ * generator free-runs.
  *
  *   - Strike level: every hit carries a strike level, taken from the MIDI
  *     velocity. It scales the level of the whole mix, the depth of the
@@ -91,11 +92,6 @@
 #define H5_KICK_CLICK_FLOOR_Q16 (3 * H5_Q16_ONE / 10)  /* 0.3 */
 #define H5_STD_CLICK_FLOOR_Q16 (4 * H5_Q16_ONE / 10)   /* 0.4 */
 
-/* The tone core: the sine and the triangle of the same phase mixed with
- * this weight. The triangle carries the odd harmonics that give the tone
- * its body; the weight is the same for the three voices. */
-#define H5_TONE_TRI_WEIGHT_Q16 (45 * H5_Q16_ONE / 100)
-
 /* Kick path weights and constants, Q16. */
 #define H5_KICK_TONE_WEIGHT_Q16 (85 * H5_Q16_ONE / 100) /* 0.85 */
 #define H5_KICK_NOISE_WEIGHT_Q16 (4 * H5_Q16_ONE / 10) /* 0.4 */
@@ -134,11 +130,6 @@
  * while leaving the 95.8 Hz fundamental essentially level. */
 #define H5_SNARE_OUT_HP_HZ (50 * H5_Q16_ONE)
 #define H5_SNARE_OUT_HP_Q16 (46341) /* 1/sqrt(2), Butterworth */
-
-/* The Snare tone core uses less triangle than Kick/Tom. A sine-heavy core
- * keeps the shell tone from sounding too harmonic or "melodic"; the rattle
- * and the drive harmonics still give it body. */
-#define H5_SNARE_TRI_WEIGHT_Q16 (22 * H5_Q16_ONE / 100) /* 0.22 */
 
 /* The Snare's drive stage. The driven tone carries a third harmonic about
  * 24 dB below its fundamental (always rendered) and a second harmonic about
@@ -418,12 +409,14 @@ static void h5_tone_osc(uint32_t *phase, const struct h5_pitch_curve_s *curve,
 }
 
 /* The tone core: the sine and the triangle of the same phase, mixed with
- * the triangle weight. Both are Q31, so the mix is Q31. */
-static int32_t h5_tone_core(int32_t s, int32_t st)
+ * the Drive weight. Drive 0 leaves the sine alone; Drive 1 is the triangle
+ * alone. Both inputs are Q31, so the mix is Q31. */
+static int32_t h5_tone_core(int32_t s, int32_t st, int32_t drive_q16)
 {
+    int32_t tri = h5_mul_q16(st, drive_q16);
     return h5_sat_add_q31(
-        h5_mul_q16(s, H5_Q16_ONE - H5_TONE_TRI_WEIGHT_Q16),
-        (int32_t)((uint32_t)h5_mul_q16(st, H5_TONE_TRI_WEIGHT_Q16) << 1));
+        h5_mul_q16(s, H5_Q16_ONE - drive_q16),
+        h5_sat_add_q31(tri, tri));
 }
 
 /* The transient burst: the source scaled by the click gain and by the tenth
@@ -512,6 +505,7 @@ static void h5_kick_apply(void *engine,
 
     k->bend_q16 = params[H5_PARAM_BEND];
     k->noise_pitch_q16 = params[H5_PARAM_NOISE_PITCH];
+    k->drive_q16 = params[H5_PARAM_DRIVE];
 
     /* NoiseTone is the tone amount; Click splits tone and sustain noise
      * through mirrored x^0.7 curves. */
@@ -663,8 +657,8 @@ int32_t h5_kick_process(void *engine)
     }
 
     /* Tone: env^3 * 0.85*NoiseTone^0.125*(1-Click)^0.25
-     *       * ((1-Drive)*s + Drive*5*st). */
-    tone = h5_mul_q30(h5_tone_core(s, st), tone3);
+     *       * ((1-Drive)*s + 2*Drive*st). */
+    tone = h5_mul_q30(h5_tone_core(s, st, k->drive_q16), tone3);
     tone = h5_mul_q16(tone, k->tone_gain_q16);
 
     sum = h5_sat_add_q31(tone, noise);
@@ -711,6 +705,7 @@ static void h5_tom_apply(void *engine,
 
     t->bend_q16 = params[H5_PARAM_BEND];
     t->noise_pitch_q16 = params[H5_PARAM_NOISE_PITCH];
+    t->drive_q16 = params[H5_PARAM_DRIVE];
 
     t->tone_gain_q16 = h5_mul_q16(h5_pow0125_q16(noise_tone),
         h5_mul_q16(H5_TOM_TONE_SCALE_Q16,
@@ -840,8 +835,8 @@ int32_t h5_tom_process(void *engine)
 
     /* Body: env^3 * (0.46*NoiseTone^0.125*core
      *                 + 0.45*(1-NoiseTone)^0.7*(1-Click)^0.7*noise). */
-    body = h5_body_mix(h5_tone_core(s, st), nf, env3, t->tone_gain_q16,
-        t->noise_gain_q16);
+    body = h5_body_mix(h5_tone_core(s, st, t->drive_q16), nf, env3,
+        t->tone_gain_q16, t->noise_gain_q16);
 
     /* Transient burst: env_c^10 * Click^0.7 * nf. Skip it once the burst
      * envelope is silent. */
@@ -898,6 +893,7 @@ static void h5_snare_apply(void *engine,
 
     sn->bend_q16 = params[H5_PARAM_BEND];
     sn->noise_pitch_q16 = params[H5_PARAM_NOISE_PITCH];
+    sn->drive_q16 = params[H5_PARAM_DRIVE];
 
     /* The Snare's Noise/Tone control is a balance, not a tone amount: the
      * shell tone follows the eighth root of the setting (NoiseTone^0.125)
@@ -1049,21 +1045,16 @@ int32_t h5_snare_process(void *engine)
     s2 = h5_sine_interp(sn->phase * 2u);
 #endif
     s3 = h5_sine_interp(sn->phase * 3u);
-    {
-        int32_t sine = h5_mul_q16(s, H5_Q16_ONE - H5_SNARE_TRI_WEIGHT_Q16);
-        int32_t tri = (int32_t)((uint32_t)h5_mul_q16(st,
-            H5_SNARE_TRI_WEIGHT_Q16) << 1);
-        int32_t snare_core = h5_sat_add_q31(sine, tri);
+    int32_t snare_core = h5_tone_core(s, st, sn->drive_q16);
 
 #ifdef LIBHIVE_XTRA_PRECISION
-        core = h5_sat_add_q31(snare_core,
-            h5_sat_add_q31(h5_mul_q16(s2, H5_SNARE_DRIVE_H2_Q16),
-                -h5_mul_q16(s3, H5_SNARE_DRIVE_H3_Q16)));
+    core = h5_sat_add_q31(snare_core,
+        h5_sat_add_q31(h5_mul_q16(s2, H5_SNARE_DRIVE_H2_Q16),
+            -h5_mul_q16(s3, H5_SNARE_DRIVE_H3_Q16)));
 #else
-        core = h5_sat_sub_q31(snare_core,
-            h5_mul_q16(s3, H5_SNARE_DRIVE_H3_Q16));
+    core = h5_sat_sub_q31(snare_core,
+        h5_mul_q16(s3, H5_SNARE_DRIVE_H3_Q16));
 #endif
-    }
     core = h5_mul_q16(core, H5_SNARE_DRIVE_HEADROOM_Q16);
 
     /* The rattle: broadband wire noise plus four resonances. */

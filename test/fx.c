@@ -176,6 +176,71 @@ static int test_tail(void)
     return failures;
 }
 
+/* The wet return of the bus, with the gate bypassed, against the dry
+ * render of the same hit. The reverb is a send effect: its return has to
+ * be loud enough to hear next to the voice that feeds it, and it has to
+ * stay below it, or the bus would drown the kit. */
+static int test_wet_level(void)
+{
+    struct h5_context_s *ctx = fx_new(FX_RATE);
+    int16_t *wet = fx_buffer();
+    int16_t *dry = fx_buffer();
+    int32_t wet_peak;
+    int32_t dry_peak;
+
+    h5_set_fx_param((h5_context)ctx, H5_FX_ROOM_SIZE, H5_Q16_ONE);
+    h5_set_fx_param((h5_context)ctx, H5_FX_WET, H5_Q16_ONE);
+    h5_set_fx_param((h5_context)ctx, H5_FX_GATE_RANGE, 0);
+    h5_set_instrument_fx_send((h5_context)ctx, H5_INSTR_SNARE, H5_Q16_ONE);
+    h5_trigger((h5_context)ctx, H5_INSTR_SNARE);
+    h5_process((h5_context)ctx, wet, FX_FRAMES);
+
+    h5_reset((h5_context)ctx);
+    h5_set_fx_param((h5_context)ctx, H5_FX_GATE_RANGE, 0);
+    h5_trigger((h5_context)ctx, H5_INSTR_SNARE);
+    h5_process((h5_context)ctx, dry, FX_FRAMES);
+
+    /* The wet is the difference between the two renders: the bus adds its
+     * return to the dry signal. */
+    wet_peak = 0;
+    dry_peak = 0;
+    {
+        size_t i;
+
+        for (i = 0u; i < (size_t)FX_FRAMES * 2u; i++) {
+            int32_t d = (int32_t)wet[i] - (int32_t)dry[i];
+            int32_t v = sample_abs(d);
+
+            if (v > wet_peak) {
+                wet_peak = v;
+            }
+            v = sample_abs(dry[i]);
+            if (v > dry_peak) {
+                dry_peak = v;
+            }
+        }
+    }
+
+    /* At least a tenth of the dry level: the return has to be heard. */
+    if (wet_peak < dry_peak / 10) {
+        fail("the wet return is too quiet to hear");
+    } else {
+        ok("the wet return is loud enough to hear");
+    }
+
+    /* Below the dry level: the bus must not drown the kit. */
+    if (wet_peak > dry_peak) {
+        fail("the wet return is louder than the dry signal");
+    } else {
+        ok("the wet return stays below the dry signal");
+    }
+
+    free(wet);
+    free(dry);
+    h5_destroy_context((h5_context)ctx);
+    return failures;
+}
+
 /* -40 dBFS in Q15 LSB. */
 #define FX_MINUS_40_DBFS 328
 
@@ -393,6 +458,7 @@ int command_fx(void)
 {
     test_bit_identical();
     test_tail();
+    test_wet_level();
     test_gate();
     test_levels();
     test_ram();

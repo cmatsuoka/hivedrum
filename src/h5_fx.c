@@ -23,7 +23,7 @@ static const uint16_t h5_fx_allpass_base[H5_FX_ALLPASSES] = {
     556u, 441u, 341u, 225u
 };
 
-#define H5_FX_INPUT_GAIN_Q31 ((int32_t)0x20000000) /* 0.25 */
+#define H5_FX_INPUT_GAIN_Q31 ((int32_t)0x7FFFFFFF) /* 1.0 */
 #define H5_FX_FB_Q31 ((int32_t)1804886016)         /* 0.84, round half up */
 #define H5_FX_FULL ((int32_t)0x7FFFFFFF)           /* Q31 unity */
 #define H5_FX_BUSY_LEVEL ((int32_t)(1 << 20))      /* ~ -66 dBFS */
@@ -204,7 +204,12 @@ void h5_fx_configure(struct h5_context_s *ctx)
     }
 
     ctx->fx.room_q16 = room;
-    ctx->fx.damp_q16 = 9830 + (int32_t)(((int64_t)damping * 39322) >> 16);
+    /* The damping coefficient is the one-pole's share of the new sample:
+     * the larger it is, the closer the filter follows the comb's output
+     * and the brighter the tail stays. The parameter therefore runs the
+     * other way round: damping 0 is the bright tail, damping 1 the dark
+     * one, as the header says. */
+    ctx->fx.damp_q16 = 49152 - (int32_t)(((int64_t)damping * 39322) >> 16);
 
     width_q31 = h5_q16_to_q31_full(width);
     ctx->fx.width_q31 = width_q31;
@@ -410,8 +415,16 @@ void h5_fx_process(struct h5_context_s *ctx, int64_t in_l, int64_t in_r,
     if (key_r > level) {
         level = key_r;
     }
-    fx->out_env = (int32_t)((int64_t)fx->out_env
-        + (((int64_t)level - fx->out_env) >> 7));
+    /* The bus is busy while its tail is still audible. The level is a
+     * peak follower: it jumps to the newest peak at once and falls away
+     * slowly, so the sparse echoes of a decaying tail keep it above the
+     * threshold instead of dropping between them. */
+    if (level > fx->out_env) {
+        fx->out_env = level;
+    } else {
+        fx->out_env = (int32_t)((int64_t)fx->out_env
+            - (((int64_t)fx->out_env - level) >> 12));
+    }
 
     *out_l = wl;
     *out_r = wr;

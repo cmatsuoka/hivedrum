@@ -140,13 +140,14 @@ void h5_process(h5_context handle, int16_t *stereo_out, size_t frames)
                 h5_mix_add(ctx, voice, out, &left, &right);
 
                 /* The FX bus takes the voice output in the Q30 engine
-                 * domain but uses the Q16 send gain directly; the reverb's
-                 * input gain normalises the bus, so the dry path's doubling
-                 * is intentionally not applied here. */
+                 * domain and uses the Q16 send gain directly. The mix bus
+                 * doubles its contribution, so the bus does the same: both
+                 * accumulators then live in the same Q31 domain, and the
+                 * reverb's own gain staging starts from unity. */
                 if ((ctx->fx_gain_left[voice] | ctx->fx_gain_right[voice])
                     != 0) {
-                    fx_left += h5_mul_q16(out, ctx->fx_gain_left[voice]);
-                    fx_right += h5_mul_q16(out, ctx->fx_gain_right[voice]);
+                    fx_left += (int64_t)h5_mul_q16(out, ctx->fx_gain_left[voice]) * 2;
+                    fx_right += (int64_t)h5_mul_q16(out, ctx->fx_gain_right[voice]) * 2;
                 }
 
                 volume = ctx->voice_params[voice][H5_PARAM_VOLUME];

@@ -112,9 +112,11 @@ Setters clamp out-of-range values to the documented range, store the clamped
 value and return `H5_ERR_RANGE`. Unsupported `(voice, param)` pairs return
 `H5_ERR_UNSUPPORTED` and leave state unchanged.
 
-Each instrument has a mixer volume and pan. Pan is 0 (left), 65536 (right) or
-in between; at centre the voice contributes half its amplitude to each
-channel. All instruments are summed into a 64-bit mix bus and converted to
+Each instrument has a mixer volume and pan. Volume spans 0 to 131072, with
+65536 (unity gain, the old maximum) at the midpoint, so the upper half of the
+control is boost headroom. Pan is 0 (left), 65536 (right) or in between; at
+centre the voice contributes half its amplitude to each channel. All
+instruments are summed into a 64-bit mix bus and converted to
 16-bit output once per frame with rounding and saturation; there is no
 separate master limiter.
 

@@ -24,7 +24,7 @@ extern "C" {
 /* Library version. major/minor/patch are packed as 0x00MMmmpp.
  * The plain integer constants keep H5_VERSION_NUMBER usable in #if. */
 #define H5_VERSION_MAJOR 0
-#define H5_VERSION_MINOR 5
+#define H5_VERSION_MINOR 6
 #define H5_VERSION_PATCH 0
 #define H5_VERSION_NUMBER \
     ((H5_VERSION_MAJOR << 16) | (H5_VERSION_MINOR << 8) | H5_VERSION_PATCH)
@@ -202,8 +202,10 @@ h5_status h5_get_param(const h5_context ctx,
  * surface for that voice. */
 bool h5_param_supported(h5_voice voice, h5_param param);
 
-/* Set the per-instrument mixer volume. Range is 0 .. H5_Q16_ONE;
- * out-of-range values are clamped to that range, the clamped value is
+/* Set the per-instrument mixer volume. Range is 0 .. 2 * H5_Q16_ONE;
+ * H5_Q16_ONE (unity gain) is the middle of the range, so the lower half
+ * reaches from silence to unity and the upper half is boost headroom.
+ * Out-of-range values are clamped to that range, the clamped value is
  * stored, and H5_ERR_RANGE is returned. Equivalent to
  * h5_set_param(ctx, voice, H5_PARAM_VOLUME, volume_q16), where `voice` is
  * the instrument's parameter voice: the Hi-hat instruments both map to

@@ -491,7 +491,8 @@ static int command_api(void)
         ok("the mixer controls are settable via h5_set_param()");
     }
 
-    /* Mixer clamping. */
+    /* Mixer clamping. Volume tops out at twice unity, with unity at the
+     * midpoint of the range. */
     status = h5_set_instrument_volume((h5_context)ctx, H5_INSTR_TOM_1,
         -H5_Q16_ONE);
     if (status != H5_ERR_RANGE ||
@@ -499,6 +500,25 @@ static int command_api(void)
         fail("h5_set_instrument_volume() did not clamp a negative value");
     } else {
         ok("h5_set_instrument_volume() clamps negative values to zero");
+    }
+
+    status = h5_set_instrument_volume((h5_context)ctx, H5_INSTR_TOM_1,
+        2 * H5_Q16_ONE);
+    if (status != H5_OK ||
+        ctx->voice_params[H5_VOICE_TOM_1][H5_PARAM_VOLUME] != 2 * H5_Q16_ONE) {
+        fail("h5_set_instrument_volume() does not accept the 2x maximum");
+    } else {
+        ok("h5_set_instrument_volume() accepts gain up to 2x");
+    }
+
+    status = h5_set_instrument_volume((h5_context)ctx, H5_INSTR_TOM_1,
+        (2 * H5_Q16_ONE) + 1);
+    if (status != H5_ERR_RANGE ||
+        ctx->voice_params[H5_VOICE_TOM_1][H5_PARAM_VOLUME]
+            != 2 * H5_Q16_ONE) {
+        fail("h5_set_instrument_volume() did not clamp above 2x");
+    } else {
+        ok("h5_set_instrument_volume() clamps values above 2x");
     }
 
     status = h5_set_instrument_pan((h5_context)ctx, H5_INSTR_TOM_3,
@@ -512,8 +532,7 @@ static int command_api(void)
 
     /* h5_reset() restores mixer defaults. */
     h5_reset((h5_context)ctx);
-    if (ctx->voice_params[H5_VOICE_KICK][H5_PARAM_VOLUME]
-            != H5_Q16_ONE / 2 ||
+    if (ctx->voice_params[H5_VOICE_KICK][H5_PARAM_VOLUME] != H5_Q16_ONE ||
         ctx->voice_params[H5_VOICE_SNARE][H5_PARAM_PAN] != H5_Q16_ONE / 2) {
         fail("h5_reset() did not restore mixer defaults");
     } else {

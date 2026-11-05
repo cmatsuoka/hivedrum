@@ -176,6 +176,9 @@ not compiled in supports no parameter at all.
 velocity gets: at 1 the velocity is used as it comes, at 0 the velocity is
 ignored and every hit sounds at full strike level.
 
+On the Hi-hat (closed or open), a soft strike also leans the balance toward
+noise: the Bell/Cymbal value drops slightly and the Noise/Tone value drops more.
+
 ## Tests
 
 `make check` runs the harness against `libhive.a`. The stages cover

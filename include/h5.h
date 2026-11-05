@@ -294,7 +294,9 @@ h5_status h5_trigger(h5_context ctx, h5_instrument instrument);
  * The velocity is the strike level of the hit, in the MIDI scale 0..127.
  * The engine turns it into a strike level of velocity/127 and applies it the
  * way the original does: the hit gets quieter, the pitch bend sweeps less
- * far, the noise gets duller and the transient gets softer.
+ * far, the noise gets duller and the transient gets softer. A soft Hi-hat
+ * (closed or open) also leans its balance slightly toward noise: its
+ * Bell/Cymbal value falls a little and its Noise/Tone value falls more.
  *
  * The per-voice Sensitivity parameter scales how much of that response the
  * velocity gets. At sensitivity 1 the velocity is used as it comes; at

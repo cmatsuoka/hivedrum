@@ -407,6 +407,10 @@ struct h5_metallic_s {
     int32_t base_inc[H5_METALLIC_BANK]; /* phase increments without the bend */
     int32_t metal_gain_q16;   /* the Bell/Cymbal balance */
     int32_t noise_gain_q16;   /* the Noise/Tone balance and the noise weight */
+    int32_t bell_q16;         /* the Bell/Cymbal parameter of the voice */
+    int32_t noise_tone_q16;   /* the Noise/Tone parameter of the voice */
+    int32_t bell_hit_q16;     /* the Hi-hat's per-hit Bell/Cymbal */
+    int32_t noise_tone_hit_q16; /* the Hi-hat's per-hit Noise/Tone */
     int32_t filter_freq_q16;  /* the noise filter's base cutoff, Hz Q16 */
     int32_t sweep_q16;        /* the filter contour depth, signed Q16 */
     int32_t bend_q16;         /* the pitch sweep of the bank, semitones Q16 */

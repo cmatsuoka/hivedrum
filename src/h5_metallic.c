@@ -116,6 +116,14 @@ static const int32_t h5_metallic_amp[H5_METALLIC_BANK] = {
 #define H5_METALLIC_CYMBAL_DECAY_Q16 (19661) /* 0.30 */
 #define H5_METALLIC_CYMBAL_DECAY_SCALE_Q16 (16384) /* 0.25 */
 
+/* The Hi-hat softens its balances on a soft hit: the Bell/Cymbal value
+ * falls by up to 10% and the Noise/Tone value by up to 50% as the strike
+ * level goes to zero, so a soft hit is a little less metallic and noticeably
+ * more noisy. Both the closed and the open instruments follow this law; the
+ * Cymbal keeps its balances at every velocity. */
+#define H5_METALLIC_HIHAT_BELL_VEL_Q16 (6554)  /* 0.10 */
+#define H5_METALLIC_HIHAT_NOISE_TONE_VEL_Q16 (32768) /* 0.50 */
+
 /* The internal scale of the mix: Q28, so the bank's sum and the noise both
  * fit in an int32_t with the engine's own headroom. */
 #define H5_METALLIC_Q28_ONE (1 << 28)
@@ -200,6 +208,35 @@ static int32_t h5_metallic_cutoff(const struct h5_metallic_s *m,
     return fc_q16;
 }
 
+/* Recompute the two balance gains from the voice's parameters. The Hi-hat
+ * trims its Bell/Cymbal and Noise/Tone values on a soft strike; the Cymbal
+ * uses the values as they are. */
+static void h5_metallic_balance_apply(struct h5_metallic_s *m)
+{
+    int32_t bell = m->bell_q16;
+    int32_t noise_tone = m->noise_tone_q16;
+
+    if (m->has_open) {
+        int32_t deficit = H5_Q16_ONE - m->vel.level_q16;
+        int32_t bell_scale = H5_Q16_ONE - h5_mul_q16(deficit,
+            H5_METALLIC_HIHAT_BELL_VEL_Q16);
+        int32_t tone_scale = H5_Q16_ONE - h5_mul_q16(deficit,
+            H5_METALLIC_HIHAT_NOISE_TONE_VEL_Q16);
+
+        bell = h5_mul_q16(bell, bell_scale);
+        noise_tone = h5_mul_q16(noise_tone, tone_scale);
+    }
+
+    m->bell_hit_q16 = bell;
+    m->noise_tone_hit_q16 = noise_tone;
+
+    m->metal_gain_q16 = h5_pow07_q16(bell);
+    m->noise_gain_q16 = h5_mul_q16(
+        h5_mul_q16(H5_METALLIC_NOISE_WEIGHT_Q16,
+            h5_pow07_q16(H5_Q16_ONE - bell)),
+        h5_pow07_q16(H5_Q16_ONE - noise_tone));
+}
+
 /* Apply the parameters to one metallic engine. A parameter change goes
  * through here; the engine state is left alone so a sounding voice is not
  * cut. */
@@ -219,15 +256,13 @@ static void h5_metallic_apply(void *engine,
     m->decay_q16 = params[H5_PARAM_DECAY];
     m->bend_q16 = params[H5_PARAM_BEND];
     m->sweep_q16 = params[H5_PARAM_SWEEP];
+    m->bell_q16 = params[H5_PARAM_BELL_CYMBAL];
+    m->noise_tone_q16 = params[H5_PARAM_NOISE_TONE];
 
     /* The Bell/Cymbal balance is the metal/noise balance, and the Noise/Tone
      * balance is the tone amount of the noise path. Both follow the steep
      * x^0.7 law of the engine. */
-    m->metal_gain_q16 = h5_pow07_q16(params[H5_PARAM_BELL_CYMBAL]);
-    m->noise_gain_q16 = h5_mul_q16(
-        h5_mul_q16(H5_METALLIC_NOISE_WEIGHT_Q16,
-            h5_pow07_q16(H5_Q16_ONE - params[H5_PARAM_BELL_CYMBAL])),
-        h5_pow07_q16(H5_Q16_ONE - params[H5_PARAM_NOISE_TONE]));
+    h5_metallic_balance_apply(m);
 
     m->filter_freq_q16 = m->has_open
         ? H5_METALLIC_HIHAT_FILTER_HZ * H5_Q16_ONE
@@ -328,6 +363,7 @@ void h5_metallic_trigger(void *engine, int32_t level_q16,
      * envelope times for this hit. */
     m->open = (m->has_open && variant != 0u) ? 1u : 0u;
     m->open_q16 = m->open ? H5_METALLIC_HIHAT_NOISE_OPEN_Q16 : 0;
+    h5_metallic_balance_apply(m);
     h5_metallic_env_apply(m, sample_rate);
 
     for (i = 0; i < H5_METALLIC_BANK; i++) {

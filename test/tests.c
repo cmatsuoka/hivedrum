@@ -1763,6 +1763,77 @@ static int command_hihat_open_close(void)
     return 0;
 }
 
+/* The Hi-hat trims its Bell/Cymbal and Noise/Tone values as the strike level
+ * falls, on both the closed and the open instrument. The Noise/Tone trim is
+ * the stronger of the two, and the Cymbal keeps both values. */
+static int command_hihat_velocity_balance(void)
+{
+    struct h5_context_s *ctx =
+        (struct h5_context_s *)h5_create_context(TEST_RATE);
+    int32_t bell_full, bell_soft, bell_open;
+    int32_t tone_full, tone_soft, tone_open;
+    int32_t bell_drop, tone_drop;
+    int result = 0;
+
+    if (ctx == 0) {
+        fail("could not create a context");
+        return -1;
+    }
+
+    h5_reset((h5_context)ctx);
+    h5_trigger_velocity((h5_context)ctx, H5_INSTR_HIHAT_CLOSED, 127u);
+    bell_full = ctx->hihat.bell_hit_q16;
+    tone_full = ctx->hihat.noise_tone_hit_q16;
+
+    h5_trigger_velocity((h5_context)ctx, H5_INSTR_HIHAT_CLOSED, 32u);
+    bell_soft = ctx->hihat.bell_hit_q16;
+    tone_soft = ctx->hihat.noise_tone_hit_q16;
+
+    if (bell_soft >= bell_full || tone_soft >= tone_full) {
+        fail("a soft closed Hi-hat does not trim its balances");
+        result = -1;
+    } else {
+        bell_drop = ((bell_full - bell_soft) * H5_Q16_ONE) / bell_full;
+        tone_drop = ((tone_full - tone_soft) * H5_Q16_ONE) / tone_full;
+        if (tone_drop <= bell_drop) {
+            fail("the soft-hit Noise/Tone trim is not stronger than the"
+                " Bell/Cymbal trim");
+            result = -1;
+        } else if (bell_drop > H5_Q16_ONE / 5) {
+            fail("the soft-hit Bell/Cymbal trim is too strong");
+            result = -1;
+        } else {
+            ok("a soft Hi-hat trims Noise/Tone more than Bell/Cymbal");
+        }
+    }
+
+    /* The open instrument follows the same law at the same strike level. */
+    h5_trigger_velocity((h5_context)ctx, H5_INSTR_HIHAT_OPEN, 32u);
+    bell_open = ctx->hihat.bell_hit_q16;
+    tone_open = ctx->hihat.noise_tone_hit_q16;
+    if (bell_open != bell_soft || tone_open != tone_soft) {
+        fail("the Open Hi-hat does not trim its balances like the closed one");
+        result = -1;
+    } else {
+        ok("the Open Hi-hat follows the same soft-hit balance trim");
+    }
+
+#if H5_TEST_CYMBAL
+    /* The Cymbal is not a Hi-hat and keeps its balances at every velocity. */
+    h5_trigger_velocity((h5_context)ctx, H5_INSTR_CYMBAL, 32u);
+    if (ctx->cymbal.bell_hit_q16 != ctx->cymbal.bell_q16
+        || ctx->cymbal.noise_tone_hit_q16 != ctx->cymbal.noise_tone_q16) {
+        fail("a soft Cymbal trims its balances");
+        result = -1;
+    } else {
+        ok("the Cymbal keeps its balances at every velocity");
+    }
+#endif
+
+    h5_destroy_context((h5_context)ctx);
+    return result;
+}
+
 #endif /* H5_TEST_HIHAT */
 
 #endif /* H5_TEST_HIHAT || H5_TEST_CYMBAL */
@@ -1787,6 +1858,9 @@ int command_hihat(void)
         result = -1;
     }
     if (command_hihat_open_close() != 0) {
+        result = -1;
+    }
+    if (command_hihat_velocity_balance() != 0) {
         result = -1;
     }
     return result;

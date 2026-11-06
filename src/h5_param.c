@@ -101,21 +101,21 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
     },
     /* The metallic voices have their own faceplates. The Cymbal keeps
-     * Sweep, Tone Pitch, Bend, Decay, Noise/Tone and Bell/Cymbal. The
-     * Hi-hat exposes Noise (the noise low-pass cutoff), Tone Pitch, Decay,
-     * Noise/Tone, Bell/Cymbal and Noise Body (the noise high-pass corner);
-     * its Bend and Sweep are fixed at zero. The Tone Pitch scales the
-     * metallic bank (0..1) rather than naming a frequency. Defaults follow
-     * the shipped preset. */
+     * Sweep, Tone Pitch, Bend, Decay, Noise/Tone, Bell/Cymbal and the two
+     * edges of its noise filter: Noise (the low-pass cutoff) and Noise Body
+     * (the high-pass corner). The Hi-hat exposes Noise, Tone Pitch, Decay,
+     * Noise/Tone, Bell/Cymbal and Noise Body; its Bend and Sweep are fixed
+     * at zero. The Tone Pitch scales the metallic bank (0..1) rather than
+     * naming a frequency. Defaults follow the shipped preset. */
 #ifdef LIBHIVE_ENGINE_CYMBAL
     [H5_VOICE_CYMBAL] = {
-        [H5_PARAM_NOISE_PITCH] = OFF,
+        [H5_PARAM_NOISE_PITCH] = { I(2000), I(14000), I(9547) },
         [H5_PARAM_TONE_PITCH]  = { 0,      Q,        Q },
         [H5_PARAM_BEND]        = { I(-48), I(48),    0 },
         [H5_PARAM_DECAY]       = { F(1, 10), F(3, 1), I(3) },
         [H5_PARAM_NOISE_TONE]  = { 0,      Q,        F(69, 100) },
         [H5_PARAM_CLICK_TONE]  = OFF,
-        [H5_PARAM_NOISE_BODY]  = OFF,
+        [H5_PARAM_NOISE_BODY]  = { I(20),  I(5000),  I(25) },
         [H5_PARAM_DRIVE]       = OFF,
         [H5_PARAM_SWEEP]       = { -Q,     Q,        F(7, 10) },
         [H5_PARAM_BELL_CYMBAL] = { 0,      Q,        F(14, 100) },

@@ -89,10 +89,11 @@ typedef enum {
  * Noise/Tone and Click/Drum, plus the Drive control that blends the sine and
  * triangle branches of the tone core. The metallic voices have their own
  * faceplates.
- * The Cymbal supports Sweep, Tone Pitch, Bend, Decay, Noise/Tone and
- * Bell/Cymbal. The Hi-hat supports Noise, Tone Pitch, Decay, Noise/Tone,
- * Bell/Cymbal and Noise Body: its Bend and Sweep are fixed at zero, and its
- * Noise and Noise Body are the two edges of the noise filter.
+ * The Cymbal supports Sweep, Tone Pitch, Bend, Decay, Noise/Tone,
+ * Bell/Cymbal, Noise and Noise Body. The Hi-hat supports Noise, Tone Pitch,
+ * Decay, Noise/Tone, Bell/Cymbal and Noise Body: its Bend and Sweep are
+ * fixed at zero. On both metallic voices Noise and Noise Body are the two
+ * edges of the noise filter.
  *
  * Volume and Pan are the per-voice mixer controls and Sensitivity is the
  * per-voice strike sensitivity; all three are supported on every voice. Not
@@ -111,7 +112,7 @@ typedef enum {
     H5_PARAM_PAN,
     H5_PARAM_SENSITIVITY,
     H5_PARAM_FX_SEND,
-    H5_PARAM_NOISE_BODY, /* metallic noise high-pass corner; Hi-hat only */
+    H5_PARAM_NOISE_BODY, /* metallic noise high-pass corner */
     H5_PARAM_DRIVE,      /* sine/triangle blend of the drum tone core */
     H5_PARAM_COUNT
 } h5_param;

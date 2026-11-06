@@ -1769,10 +1769,10 @@ static int metallic_bend(h5_voice voice, h5_instrument instrument)
     return 0;
 }
 
-#if H5_TEST_HIHAT
-/* One of the Hi-hat's noise-filter edges changes the render and never goes
- * silent at either end of its range. */
-static int metallic_noise_edge(h5_param param, int32_t low, int32_t high,
+/* One of a metallic voice's noise-filter edges changes the render and never
+ * goes silent at either end of its range. */
+static int metallic_noise_edge(h5_voice voice, h5_instrument instrument,
+    h5_param param, int32_t low, int32_t high, const char *voice_name,
     const char *name)
 {
     h5_context ctx = h5_create_context(TEST_RATE);
@@ -1789,13 +1789,13 @@ static int metallic_noise_edge(h5_param param, int32_t low, int32_t high,
     }
 
     h5_reset(ctx);
-    set_metallic(ctx, H5_VOICE_HIHAT, param, low);
-    h5_trigger(ctx, H5_INSTR_HIHAT_CLOSED);
+    set_metallic(ctx, voice, param, low);
+    h5_trigger(ctx, instrument);
     dark = render(ctx, frames);
 
     h5_reset(ctx);
-    set_metallic(ctx, H5_VOICE_HIHAT, param, high);
-    h5_trigger(ctx, H5_INSTR_HIHAT_CLOSED);
+    set_metallic(ctx, voice, param, high);
+    h5_trigger(ctx, instrument);
     bright = render(ctx, frames);
 
     if (dark == 0 || bright == 0) {
@@ -1811,11 +1811,13 @@ static int metallic_noise_edge(h5_param param, int32_t low, int32_t high,
     bright_peak = peak_abs(bright, 0u, frames);
 
     if (!differs) {
-        fail("the Hi-hat noise edge does not change the render");
+        printf("      the %s noise edge does not change the render\n",
+            voice_name);
+        fail("a metallic noise edge does not change the render");
     } else if (dark_peak < 1000 || bright_peak < 1000) {
-        fail("an end of the Hi-hat noise edge range is silent");
+        fail("an end of a metallic noise edge range is silent");
     } else {
-        printf("ok  : the Hi-hat %s changes the render\n", name);
+        printf("ok  : the %s %s changes the render\n", voice_name, name);
     }
 
     free(dark);
@@ -1824,6 +1826,7 @@ static int metallic_noise_edge(h5_param param, int32_t low, int32_t high,
     return 0;
 }
 
+#if H5_TEST_HIHAT
 /* The open Hi-hat rings for longer than the closed one; both are the same
  * voice. */
 static int command_hihat_open_close(void)
@@ -1965,12 +1968,14 @@ int command_hihat(void)
     if (metallic_bell_cymbal(H5_VOICE_HIHAT, H5_INSTR_HIHAT_CLOSED) != 0) {
         result = -1;
     }
-    if (metallic_noise_edge(H5_PARAM_NOISE_PITCH,
-            2000 * H5_Q16_ONE, 14000 * H5_Q16_ONE, "Noise") != 0) {
+    if (metallic_noise_edge(H5_VOICE_HIHAT, H5_INSTR_HIHAT_CLOSED,
+            H5_PARAM_NOISE_PITCH, 2000 * H5_Q16_ONE, 14000 * H5_Q16_ONE,
+            "Hi-hat", "Noise") != 0) {
         result = -1;
     }
-    if (metallic_noise_edge(H5_PARAM_NOISE_BODY,
-            500 * H5_Q16_ONE, 5000 * H5_Q16_ONE, "Noise Body") != 0) {
+    if (metallic_noise_edge(H5_VOICE_HIHAT, H5_INSTR_HIHAT_CLOSED,
+            H5_PARAM_NOISE_BODY, 500 * H5_Q16_ONE, 5000 * H5_Q16_ONE,
+            "Hi-hat", "Noise Body") != 0) {
         result = -1;
     }
     if (command_hihat_open_close() != 0) {
@@ -2006,6 +2011,16 @@ int command_cymbal(void)
         result = -1;
     }
     if (metallic_bend(H5_VOICE_CYMBAL, H5_INSTR_CYMBAL) != 0) {
+        result = -1;
+    }
+    if (metallic_noise_edge(H5_VOICE_CYMBAL, H5_INSTR_CYMBAL,
+            H5_PARAM_NOISE_PITCH, 2000 * H5_Q16_ONE, 14000 * H5_Q16_ONE,
+            "Cymbal", "Noise") != 0) {
+        result = -1;
+    }
+    if (metallic_noise_edge(H5_VOICE_CYMBAL, H5_INSTR_CYMBAL,
+            H5_PARAM_NOISE_BODY, 20 * H5_Q16_ONE, 5000 * H5_Q16_ONE,
+            "Cymbal", "Noise Body") != 0) {
         result = -1;
     }
     return result;

@@ -411,12 +411,14 @@ static int command_api(void)
     }
 
     /* The metallic voices have their own faceplates. The Cymbal keeps
-     * Sweep, Tone Pitch, Bend, Decay, Noise/Tone and Bell/Cymbal. The
-     * Hi-hat replaces Bend and Sweep with Noise and Noise Body. */
+     * Sweep, Tone Pitch, Bend, Decay, Noise/Tone, Bell/Cymbal, Noise and
+     * Noise Body. The Hi-hat replaces Bend and Sweep with Noise and Noise
+     * Body. */
     {
         static const h5_param cymbal_faceplate[] = {
             H5_PARAM_SWEEP, H5_PARAM_TONE_PITCH, H5_PARAM_BEND,
-            H5_PARAM_DECAY, H5_PARAM_NOISE_TONE, H5_PARAM_BELL_CYMBAL
+            H5_PARAM_DECAY, H5_PARAM_NOISE_TONE, H5_PARAM_BELL_CYMBAL,
+            H5_PARAM_NOISE_PITCH, H5_PARAM_NOISE_BODY
         };
         static const h5_param hihat_faceplate[] = {
             H5_PARAM_NOISE_PITCH, H5_PARAM_TONE_PITCH, H5_PARAM_DECAY,
@@ -424,7 +426,7 @@ static int command_api(void)
             H5_PARAM_NOISE_BODY
         };
         static const h5_param cymbal_absent[] = {
-            H5_PARAM_NOISE_PITCH, H5_PARAM_CLICK_TONE, H5_PARAM_NOISE_BODY
+            H5_PARAM_CLICK_TONE
         };
         static const h5_param hihat_absent[] = {
             H5_PARAM_BEND, H5_PARAM_SWEEP, H5_PARAM_CLICK_TONE

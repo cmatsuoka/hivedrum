@@ -28,10 +28,11 @@
  *     all, 0 leaves all of it.
  *   - The noise is the same LCG the drum voices use, with a two-pole
  *     high-pass and a resonant low-pass whose cutoff follows the envelope.
- *     The high-pass corner is per voice: 25 Hz on the Cymbal, 3 kHz on the
- *     Hi-hat, whose noise keeps only the sibilant band above the corner.
- *     The Sweep is signed: a positive sweep closes the filter as the sound
- *     dies, a negative one opens it, so the tail is either dull or bright.
+ *     Both edges are parameters on both voices: Noise is the low-pass
+ *     cutoff and Noise Body is the high-pass corner. The Hi-hat keeps only
+ *     the sibilant band above its corner. The Sweep is signed: a positive
+ *     sweep closes the filter as the sound dies, a negative one opens it,
+ *     so the tail is either dull or bright.
  *   - The attack of both envelopes is fixed in samples: 1 ms for the metal
  *     and 5 ms for the noise of the Hi-hat, 20 ms for both of the Cymbal.
  *     The Decay control is the release of the metal envelope; the release of
@@ -70,11 +71,8 @@ static const int32_t h5_metallic_amp[H5_METALLIC_BANK] = {
 /* The weight of the noise path in the mix. */
 #define H5_METALLIC_NOISE_WEIGHT_Q16 (51118) /* 0.78 */
 
-/* The Cymbal's noise filter edges, Hz. The Hi-hat exposes both edges as
- * parameters instead: its Noise sets the low-pass cutoff and its Noise Body
- * sets the high-pass corner. */
-#define H5_METALLIC_CYMBAL_FILTER_HZ 9547
-#define H5_METALLIC_CYMBAL_HP_HZ 25
+/* The noise filter edges of both metallic voices are parameters: Noise sets
+ * the low-pass cutoff and Noise Body sets the high-pass corner. */
 
 /* The resonance of the noise filter. It is an engine constant too. */
 #define H5_METALLIC_RESONANCE_Q16 H5_Q16_ONE
@@ -254,19 +252,18 @@ static void h5_metallic_apply(void *engine,
     m->bell_q16 = params[H5_PARAM_BELL_CYMBAL];
     m->noise_tone_q16 = params[H5_PARAM_NOISE_TONE];
 
+    /* Both edges of the noise filter are parameters on both voices: Noise
+     * is the low-pass cutoff and Noise Body is the high-pass corner. The
+     * Hi-hat keeps Bend and Sweep fixed at zero. */
+    m->filter_freq_q16 = params[H5_PARAM_NOISE_PITCH];
+    hp_q16 = params[H5_PARAM_NOISE_BODY];
+
     if (m->has_open) {
-        /* The Hi-hat sets both edges of the noise filter: Noise is the
-         * low-pass cutoff and Noise Body is the high-pass corner. Bend and
-         * Sweep are fixed at zero. */
         m->bend_q16 = 0;
         m->sweep_q16 = 0;
-        m->filter_freq_q16 = params[H5_PARAM_NOISE_PITCH];
-        hp_q16 = params[H5_PARAM_NOISE_BODY];
     } else {
         m->bend_q16 = params[H5_PARAM_BEND];
         m->sweep_q16 = params[H5_PARAM_SWEEP];
-        m->filter_freq_q16 = H5_METALLIC_CYMBAL_FILTER_HZ * H5_Q16_ONE;
-        hp_q16 = H5_METALLIC_CYMBAL_HP_HZ * H5_Q16_ONE;
     }
 
     /* The Bell/Cymbal balance is the metal/noise balance, and the Noise/Tone

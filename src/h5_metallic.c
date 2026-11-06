@@ -34,9 +34,9 @@
  *     sweep closes the filter as the sound dies, a negative one opens it,
  *     so the tail is either dull or bright.
  *   - The attack of both envelopes is fixed in samples: 1 ms for the metal
- *     and 5 ms for the noise of the Hi-hat, 20 ms for both of the Cymbal.
- *     The Decay control is the release of the metal envelope; the release of
- *     the noise envelope is the Decay plus the Open amount of the Hi-hat.
+ *     and 5 ms for the noise on both voices. The Decay control is the
+ *     release of the metal envelope; the release of the noise envelope is
+ *     the Decay plus the Open amount of the Hi-hat.
  *   - The drive stage is a dry path and a saturated path in parallel, the
  *     way the engine does it: the dry path keeps the mix linear and the
  *     saturated path adds the soft-clipped harmonics.
@@ -98,7 +98,8 @@ static const int32_t h5_metallic_amp[H5_METALLIC_BANK] = {
  * counts, not times. */
 #define H5_METALLIC_HIHAT_METAL_ATTACK 48
 #define H5_METALLIC_HIHAT_NOISE_ATTACK 240
-#define H5_METALLIC_CYMBAL_ATTACK 960
+#define H5_METALLIC_CYMBAL_METAL_ATTACK 48
+#define H5_METALLIC_CYMBAL_NOISE_ATTACK 240
 
 /* The release laws of the Hi-hat's envelopes, in seconds:
  *   metal = 0.13*Decay + 0.05*strike + 0.1
@@ -173,12 +174,14 @@ static void h5_metallic_env_apply(struct h5_metallic_s *m,
         /* The Cymbal: the metal and the noise have their own envelopes.
          * The metal release is 0.3 + 0.25*Decay, the noise release is the
          * Decay itself. */
-        attack_q16 = (int32_t)(((uint64_t)H5_METALLIC_CYMBAL_ATTACK << 16)
-            / sample_rate);
+        attack_q16 = (int32_t)(((uint64_t)H5_METALLIC_CYMBAL_METAL_ATTACK
+            << 16) / sample_rate);
         release_metal = H5_METALLIC_CYMBAL_DECAY_Q16
             + h5_mul_q16(decay, H5_METALLIC_CYMBAL_DECAY_SCALE_Q16);
         h5_env_set_times(&m->env_metal, attack_q16, release_metal,
             sample_rate);
+        attack_q16 = (int32_t)(((uint64_t)H5_METALLIC_CYMBAL_NOISE_ATTACK
+            << 16) / sample_rate);
         h5_env_set_times(&m->env_noise, attack_q16, decay, sample_rate);
     }
 }
@@ -499,10 +502,12 @@ int32_t h5_metallic_process(void *engine)
         env_f = env_n4;
     } else {
         /* The Cymbal: the noise envelope is raised to the third power, and
-         * the filter follows the metal envelope, which falls away faster. */
+         * it is that same envelope that drives the filter. The contour
+         * therefore follows the wash it shapes: it opens over the noise
+         * attack and closes over the noise release. */
         env_n3 = h5_cube_q30(env_n);
         env_n4 = env_n3;
-        env_f = env_m3;
+        env_f = env_n3;
     }
 
     cutoff = (m->sweep_q16 == 0)

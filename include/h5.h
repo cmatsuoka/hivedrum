@@ -93,7 +93,8 @@ typedef enum {
  * Bell/Cymbal, Noise and Noise Body. The Hi-hat supports Noise, Tone Pitch,
  * Decay, Noise/Tone, Bell/Cymbal and Noise Body: its Bend and Sweep are
  * fixed at zero. On both metallic voices Noise and Noise Body are the two
- * edges of the noise filter.
+ * edges of the noise filter. The Tone Pitch scales the Hi-hat's bank and
+ * sets the Cymbal's bell scan rate.
  *
  * Volume and Pan are the per-voice mixer controls and Sensitivity is the
  * per-voice strike sensitivity; all three are supported on every voice. Not

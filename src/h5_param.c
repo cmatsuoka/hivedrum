@@ -105,12 +105,14 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
      * edges of its noise filter: Noise (the low-pass cutoff) and Noise Body
      * (the high-pass corner). The Hi-hat exposes Noise, Tone Pitch, Decay,
      * Noise/Tone, Bell/Cymbal and Noise Body; its Bend and Sweep are fixed
-     * at zero. The Tone Pitch scales the metallic bank (0..1) rather than
-     * naming a frequency. Defaults follow the shipped preset. */
+     * at zero. On the Hi-hat the Tone Pitch scales the metallic bank (0..1)
+     * rather than naming a frequency; on the Cymbal the bank is fixed and
+     * the Tone Pitch sets the bell oscillator's scan rate. Defaults follow
+     * the shipped preset. */
 #ifdef LIBHIVE_ENGINE_CYMBAL
     [H5_VOICE_CYMBAL] = {
         [H5_PARAM_NOISE_PITCH] = { I(2000), I(14000), I(9547) },
-        [H5_PARAM_TONE_PITCH]  = { 0,      Q,        Q },
+        [H5_PARAM_TONE_PITCH]  = { 0,      Q,        F(7, 10) },
         [H5_PARAM_BEND]        = { I(-48), I(48),    0 },
         [H5_PARAM_DECAY]       = { F(1, 10), F(3, 1), I(3) },
         [H5_PARAM_NOISE_TONE]  = { 0,      Q,        F(69, 100) },

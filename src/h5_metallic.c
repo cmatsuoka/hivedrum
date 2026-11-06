@@ -6,10 +6,12 @@
  * The flow is:
  *
  *   metal = sum_k A_k * tri_k                   10 triangle oscillators
+ *   bell  = table(scan(TonePitch))               Cymbal only: the gong body
  *   noise = lcg -> two-pole high-pass -> resonant low-pass
  *   env_m = AR(fixed attack, Decay release)      the metal envelope
  *   env_n = AR(fixed attack, Decay+Open release)  the noise envelope
  *   mix   = metal * BellCymbal^0.7 * env_m^5
+ *           + bell * (1-BellCymbal) * env_m        (Cymbal only)
  *           + noise * (1-BellCymbal)^0.7 * (1-NoiseTone)^0.7 * env_n^4
  *   out   = (1-Drive)*mix + Drive*shaper(2*pi*(1+Drive)*mix)
  *
@@ -19,9 +21,15 @@
  *     odd-harmonic buzz a square stack makes. Each oscillator's amplitude
  *     follows the engine's own weight for it, so the bank has the same
  *     balance between the partials.
- *   - The Tone Pitch scales the bank (0..1). The Bend sweeps the whole bank
- *     down or up over the envelope, in semitones, with the same depth law
- *     the drum voices use.
+ *   - The Tone Pitch scales the Hi-hat's bank (0..1). The Cymbal's bank runs
+ *     at its fixed frequencies; its Tone Pitch sets the scan rate of the bell
+ *     instead. The Bend sweeps the whole bank down or up over the envelope,
+ *     in semitones, with the same depth law the drum voices use.
+ *   - The Cymbal also has a bell oscillator: a dense, inharmonic wave table
+ *     scanned at a few cycles per second. Its upper partials form the low
+ *     and upper body under the wash, so the hit reads as a crash rather
+ *     than a thin sheet. The Tone Pitch sets the scan rate and the
+ *     Bell/Cymbal balance fades the bell out as the bank takes over.
  *   - The Bell/Cymbal balance is the metal/noise balance: it is the engine's
  *     Click control, and it works with the steep x^0.7 law. The Noise/Tone
  *     balance is the tone amount of the noise path: 1 leaves no noise at
@@ -76,6 +84,21 @@ static const int32_t h5_metallic_amp[H5_METALLIC_BANK] = {
 
 /* The resonance of the noise filter. It is an engine constant too. */
 #define H5_METALLIC_RESONANCE_Q16 H5_Q16_ONE
+
+#if defined(LIBHIVE_ENGINE_CYMBAL)
+/* The Cymbal's bell oscillator scans the inharmonic bell table at a rate set
+ * by the Tone Pitch. The rate follows the square of the control, so a low
+ * Tone Pitch lays the table's upper partials in the low mids and a high one
+ * lifts them towards the wash. The gain places the bell under the bank so it
+ * reads as the body of the cymbal rather than a separate tone. */
+#define H5_METALLIC_BELL_RATE_Q16 (425984) /* 6.5 Hz at full Tone Pitch */
+#define H5_METALLIC_BELL_GAIN_Q16 (52429)  /* 0.8 */
+
+/* The highest table partial sits at H5_BELL_SIZE/2 times the scan rate.
+ * Limit the phase increment so that partial stays below 45% of the sample
+ * rate: 0.45 * 2^28 / (H5_BELL_SIZE/2). */
+#define H5_METALLIC_BELL_INC_MAX (58982)
+#endif
 
 /* The limits of the noise filter's cutoff, Hz. */
 #define H5_METALLIC_FC_MIN_HZ 10
@@ -292,12 +315,33 @@ static void h5_metallic_apply(void *engine,
 
     /* Rebuild the bank increments at the new Tone Pitch.
      * cycles/sample = f / sr; the 28-bit phase adds 2^28, and the bank
-     * entries are plain Hz, so inc = bank * pitch_q16 * 2^12 / sr. */
+     * entries are plain Hz, so inc = bank * pitch_q16 * 2^12 / sr. The
+     * Cymbal's bank runs at its fixed frequencies; its Tone Pitch drives the
+     * bell oscillator instead. */
     for (i = 0; i < H5_METALLIC_BANK; i++) {
-        acc = (int64_t)h5_metallic_bank[i] * pitch_scale * 4096;
+        int32_t scale = m->has_open ? pitch_scale : H5_Q16_ONE;
+
+        acc = (int64_t)h5_metallic_bank[i] * scale * 4096;
         m->base_inc[i] = (int32_t)(acc / (int64_t)sample_rate);
         m->inc[i] = m->base_inc[i];
     }
+
+#if defined(LIBHIVE_ENGINE_CYMBAL)
+    /* The Cymbal's bell: rate = base * TonePitch^2, as a phase increment.
+     * inc = rate[Hz] * 2^28 / sr, and rate is Q16 Hz, so the Q16 scale
+     * brings 2^28 down to 2^12. */
+    m->bell_inc = 0;
+    if (!m->has_open) {
+        int32_t rate_q16 = h5_mul_q16(H5_METALLIC_BELL_RATE_Q16,
+            h5_mul_q16(pitch_scale, pitch_scale));
+
+        m->bell_inc = (int32_t)(((int64_t)rate_q16 * 4096)
+            / (int64_t)sample_rate);
+        if (m->bell_inc > H5_METALLIC_BELL_INC_MAX) {
+            m->bell_inc = H5_METALLIC_BELL_INC_MAX;
+        }
+    }
+#endif
 
     /* The noise filter sweeps with the envelope between the two ends of the
      * sweep range. */
@@ -336,6 +380,10 @@ void h5_metallic_setup(void *engine, h5_voice voice,
         m->inc[i] = 0;
         m->base_inc[i] = 0;
     }
+#if defined(LIBHIVE_ENGINE_CYMBAL)
+    m->bell_phase = 0;
+    m->bell_inc = 0;
+#endif
     m->open = 0u;
     m->open_q16 = 0;
     m->has_open = (voice == H5_VOICE_HIHAT) ? 1u : 0u;
@@ -382,6 +430,9 @@ void h5_metallic_trigger(void *engine, int32_t level_q16,
         m->phase[i] = h5_metallic_phase(i);
         m->inc[i] = m->base_inc[i];
     }
+#if defined(LIBHIVE_ENGINE_CYMBAL)
+    m->bell_phase = 0;
+#endif
     h5_env_trigger(&m->env_metal);
     h5_env_trigger(&m->env_noise);
     h5_svf_reset(&m->noise_filter);
@@ -436,7 +487,11 @@ int32_t h5_metallic_process(void *engine)
     struct h5_metallic_s *m = (struct h5_metallic_s *)engine;
     int32_t env_m, env_n, env_m3, env_f, metal, noise, mix, x, u, lp;
     int32_t env_m2, env_m4, env_m5, env_n2, env_n4, env_n3;
+#if defined(LIBHIVE_ENGINE_CYMBAL)
+    int32_t ratio, cutoff, bell;
+#else
     int32_t ratio, cutoff;
+#endif
     int i;
 
     if (!m->head.active) {
@@ -478,6 +533,25 @@ int32_t h5_metallic_process(void *engine)
     env_m5 = h5_mul_q30(env_m4, env_m);
     metal = h5_mul_q16(metal, m->metal_gain_q16);
     metal = h5_mul_q30(metal, env_m5);
+
+#if defined(LIBHIVE_ENGINE_CYMBAL)
+    /* The Cymbal's bell: the slow inharmonic scan is the body of the voice.
+     * It rides the metal envelope, and the Bell/Cymbal balance fades it out
+     * as the bank takes over. At Tone Pitch 0 the scan stops, so the bell
+     * is skipped entirely instead of riding as a constant. */
+    if (!m->has_open && m->bell_inc != 0) {
+        int32_t bell_gain;
+
+        m->bell_phase = (m->bell_phase + (uint32_t)m->bell_inc)
+            & 0x0FFFFFFFu;
+        bell = h5_bell_interp(m->bell_phase) >> 3; /* Q31 -> Q28 */
+        bell_gain = h5_mul_q16(H5_METALLIC_BELL_GAIN_Q16,
+            H5_Q16_ONE - m->bell_hit_q16);
+        bell = h5_mul_q16(bell, bell_gain);
+        bell = h5_mul_q30(bell, env_m);
+        metal = h5_sat_add_q31(metal, bell);
+    }
+#endif
 
     /* The noise: the LCG, a two-pole high-pass at the voice's corner and
      * the resonant low-pass whose cutoff follows the envelope. The poles

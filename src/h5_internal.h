@@ -110,6 +110,17 @@ static inline int16_t h5_sine_at(uint32_t index)
  * scale (peak 32767 << 16). Exact at integer table indices. */
 int32_t h5_sine_interp(uint32_t phase);
 
+#if defined(LIBHIVE_ENGINE_CYMBAL)
+/* The bell wave table: one period of a dense inharmonic wash, Q15. The
+ * Cymbal scans it slowly so its upper partials land in the low mids. */
+#define H5_BELL_SIZE 4096
+extern const int16_t h5_bell[H5_BELL_SIZE];
+
+/* Bell table interpolation, linear, same 28-bit phase and Q31 output scale
+ * as the sine lookup. */
+int32_t h5_bell_interp(uint32_t phase);
+#endif
+
 /* tan(pi * f / sr) as Q16 from the shared sine table (no libm). Used for
  * the one-pole pre-filter coefficients at parameter change only. */
 int32_t h5_tanpi_q16(int32_t f_q16, uint32_t sample_rate);
@@ -408,6 +419,10 @@ struct h5_metallic_s {
     uint32_t phase[H5_METALLIC_BANK];  /* 28-bit phases */
     int32_t inc[H5_METALLIC_BANK];     /* phase increments, bend included */
     int32_t base_inc[H5_METALLIC_BANK]; /* phase increments without the bend */
+#if defined(LIBHIVE_ENGINE_CYMBAL)
+    uint32_t bell_phase;      /* the Cymbal's bell oscillator phase */
+    int32_t bell_inc;         /* its increment, from the Tone Pitch */
+#endif
     int32_t metal_gain_q16;   /* the Bell/Cymbal balance */
     int32_t noise_gain_q16;   /* the Noise/Tone balance and the noise weight */
     int32_t bell_q16;         /* the Bell/Cymbal parameter of the voice */

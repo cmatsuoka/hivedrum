@@ -346,10 +346,14 @@ struct h5_kick_s {
 #define H5_METALLIC_BANK 10
 
 #if defined(LIBHIVE_ENGINE_CYMBAL)
-/* Length of the Cymbal's measured strike table, one entry per sample at
- * 48 kHz. */
+/* Length of the Cymbal's synthesized strike, in output samples at 48 kHz. */
 #define H5_CYMBAL_ATTACK_LEN 2880
-extern const int16_t h5_cymbal_attack[H5_CYMBAL_ATTACK_LEN];
+
+/* Number of damped modes in the synthesized strike. */
+#define H5_CYMBAL_ATTACK_MODES 22
+
+/* Length of the fade at the end of the synthesized strike, in samples. */
+#define H5_CYMBAL_ATTACK_FADE 96
 
 /* Length of the Cymbal's cleaned sustain loop, one entry per sample at
  * 48 kHz. It is played forward/backward under the wash envelope. */
@@ -440,8 +444,8 @@ struct h5_metallic_s {
     uint8_t open;               /* the hit was triggered open */
 };
 
-/* Cymbal voice runtime state. The voice has a short sampled strike and a
- * cleaned sustain loop, both played through variable-rate phase
+/* Cymbal voice runtime state. The voice has a synthesized modal strike and
+ * a cleaned sustain loop, both played through variable-rate phase
  * accumulators, plus a synthesized noise wash shaped by a fixed high-pass,
  * a swept low-pass and a resonant tone band. */
 struct h5_cymbal_s {
@@ -452,8 +456,15 @@ struct h5_cymbal_s {
     struct h5_svf_s tone_bp;     /* the tonal band, Noise/Tone */
     struct h5_sweep_s lp_sweep;  /* the low-pass coefficients over the sweep */
     struct h5_svf_s out_hp;      /* fixed output high-pass */
-    int32_t attack_phase_q16;    /* strike table position, Q16 samples */
-    int32_t attack_step_q16;     /* strike table step at Tone Pitch */
+    uint32_t attack_phase[H5_CYMBAL_ATTACK_MODES]; /* strike mode phases */
+    uint32_t attack_inc[H5_CYMBAL_ATTACK_MODES];   /* strike mode steps */
+    int32_t attack_env[H5_CYMBAL_ATTACK_MODES];    /* Q30 mode envelopes */
+    int32_t attack_env_coeff[H5_CYMBAL_ATTACK_MODES]; /* Q30 decays */
+    struct h5_noise_s attack_noise; /* strike noise burst */
+    int32_t attack_noise_prev;   /* previous noise sample, Q31 */
+    int32_t attack_noise_env;    /* Q30 burst envelope */
+    int32_t attack_noise_coeff;  /* Q30 burst decay */
+    int32_t attack_pos;          /* strike position in output samples */
     int32_t loop_phase_q16;      /* sustain loop position, Q16 samples */
     int32_t loop_step_q16;       /* sustain loop step at Tone Pitch */
     int32_t attack_gain_q16;     /* Bell/Cymbal side of the attack */
@@ -472,7 +483,7 @@ struct h5_cymbal_s {
     int32_t bend_q16;            /* strike-table pitch sweep, semitones */
     int32_t pitch_q16;           /* Tone Pitch, the strike-table rate */
     int32_t decay_q16;           /* wash release, seconds */
-    uint8_t attack_active;       /* the strike table is still playing */
+    uint8_t attack_active;       /* the synthesized strike is still playing */
 };
 
 /* One reverb comb line. The delay line lives inside the single FX block. */
@@ -638,7 +649,7 @@ void h5_metallic_trigger(void *engine, int32_t level_q16,
 int32_t h5_metallic_process(void *engine);
 
 /* Cymbal engine. The engine pointer addresses a struct h5_cymbal_s. The
- * strike table is sampled; the wash is synthesized. */
+ * strike and wash are synthesized; the sustain loop is sampled. */
 void h5_cymbal_setup(void *engine, h5_voice voice,
     const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate);
 void h5_cymbal_trigger(void *engine, int32_t level_q16, uint32_t sample_rate,

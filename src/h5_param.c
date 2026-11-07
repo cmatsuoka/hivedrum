@@ -102,8 +102,8 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
     },
     /* The Cymbal has its own faceplate: Sweep, Tone Pitch, Bend, Decay,
      * Noise/Tone, Bell/Cymbal, Noise (the wash low-pass) and Noise Body
-     * (the wash high-pass). Tone Pitch sets the playback rate of its short
-     * strike table and Bend sweeps that rate. The Hi-hat exposes Noise,
+     * (the wash high-pass). Tone Pitch sets the strike and loop playback
+     * rates and Bend sweeps them. The Hi-hat exposes Noise,
      * Tone Pitch, Decay, Noise/Tone, Bell/Cymbal and Noise Body; its Bend
      * and Sweep are fixed at zero and its Tone Pitch scales the metallic
      * bank. Defaults follow the shipped preset. */

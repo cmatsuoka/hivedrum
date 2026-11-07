@@ -90,8 +90,8 @@ typedef enum {
  * triangle branches of the tone core. The metallic voices have their own
  * faceplates.
  * The Cymbal supports Sweep, Tone Pitch, Bend, Decay, Noise/Tone,
- * Bell/Cymbal, Noise and Noise Body. Tone Pitch sets the playback rate of
- * its short strike table and Bend sweeps that rate; Noise and Noise Body are
+ * Bell/Cymbal, Noise and Noise Body. Tone Pitch sets the strike and loop
+ * playback rates and Bend sweeps them; Noise and Noise Body are
  * the two edges of its wash filter, Sweep moves the low-pass contour, and
  * Decay sets the wash release. The Hi-hat supports Noise, Tone Pitch, Decay,
  * Noise/Tone, Bell/Cymbal and Noise Body: its Bend and Sweep are fixed at

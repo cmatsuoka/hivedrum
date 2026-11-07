@@ -3,10 +3,11 @@
  *
  * The Cymbal is built from two parts:
  *
- *   - A short strike table, measured from the instrument, played through a
- *     variable-rate phase accumulator. The Tone Pitch sets the playback
- *     rate and Bend sweeps it over the wash envelope, so the strike takes
- *     the falling or rising character of the hardware.
+ *   - A synthesized strike: a bank of damped inharmonic modes plus a short
+ *     noise burst, played through variable-rate phase accumulators. The
+ *     Tone Pitch sets the playback rate and Bend sweeps it over the wash
+ *     envelope, so the strike takes the falling or rising character of the
+ *     hardware.
  *   - A cleaned sustain loop, derived from recorded audio data and replayed
  *     forward/backward under the same envelope. The loop supplies the
  *     metallic body; it is mixed with the noise before the wash filters.
@@ -16,7 +17,7 @@
  *     exponential release, so its level falls by a nearly constant number
  *     of decibels per second through the tail.
  *
- * The Bell/Cymbal balance trades the sampled strike against the wash, and
+ * The Bell/Cymbal balance trades the synthesized strike against the wash, and
  * Noise/Tone trades the noisy part of the wash against its tonal band.
  * The two parts share the strike level and leave through a fixed high-pass
  * and a soft clipper.
@@ -30,7 +31,7 @@
 
 #if defined(LIBHIVE_ENGINE_CYMBAL)
 
-/* The strike table's own rate. */
+/* The sampled loop's own rate. */
 #define H5_CYMBAL_TABLE_RATE 48000
 
 /* The wash low-pass and the tonal band. */
@@ -57,6 +58,10 @@
 /* The wash and tone gains. */
 #define H5_CYMBAL_WASH_GAIN_Q16 (58982) /* 0.9 */
 #define H5_CYMBAL_TONE_GAIN_Q16 (131072) /* 2.0 */
+
+/* The strike's noise burst and its level. */
+#define H5_CYMBAL_ATTACK_NOISE_TAU_Q16 262 /* 4 ms */
+#define H5_CYMBAL_ATTACK_NOISE_GAIN_Q16 5145 /* 0.0785 */
 
 /* The envelope stops below this Q30 value (about -90 dB of the peak). */
 #define H5_CYMBAL_ENV_STOP (1 << 10)
@@ -88,20 +93,34 @@ static int32_t h5_cymbal_exp_q30(int32_t t)
     return (int32_t)c;
 }
 
-/* The strike table sample at a Q16 position, Q31, zero past the end. */
-static int32_t h5_cymbal_attack_sample(int32_t phase_q16)
-{
-    int32_t index = phase_q16 >> 16;
-    int32_t frac = phase_q16 & 0xFFFF;
-    int32_t a, b;
+/* The strike's damped inharmonic modes. The frequencies are Hz in Q16, the
+ * amplitudes are Q16, the time constants are seconds in Q16, and the initial
+ * phases are 28-bit fractions of a cycle. */
+static const int32_t h5_cymbal_attack_freq_q16[H5_CYMBAL_ATTACK_MODES] = {
+    5898240, 85196800, 111411200, 157286400, 176947200, 196608000,
+    216268800, 235929600, 255590400, 275251200, 294912000, 314572800,
+    334233600, 353894400, 380108800, 406323200, 439091200, 471859200,
+    524288000, 589824000, 655360000, 734003200
+};
 
-    if (index < 0 || index >= H5_CYMBAL_ATTACK_LEN - 1) {
-        return 0;
-    }
-    a = (int32_t)h5_cymbal_attack[index] << 16;
-    b = (int32_t)h5_cymbal_attack[index + 1] << 16;
-    return a + h5_mul_q16(b - a, frac);
-}
+static const int32_t h5_cymbal_attack_amp_q16[H5_CYMBAL_ATTACK_MODES] = {
+    17098, 1119, 917, 2104, 1566, 1115, 3252, 1450, 9032, 25580, 2121,
+    974, 3660, 3390, 2096, 466, 895, 889, 695, 251, 388, 678
+};
+
+static const int32_t h5_cymbal_attack_tau_q16[H5_CYMBAL_ATTACK_MODES] = {
+    5692, 3162, 3162, 3234, 3290, 3348, 3603, 3899, 4248, 4666, 5175,
+    6187, 7393, 8371, 10165, 11859, 13238, 14980, 18975, 19800, 20700,
+    21894
+};
+
+static const uint32_t h5_cymbal_attack_phase0[H5_CYMBAL_ATTACK_MODES] = {
+    0x03A32B19u, 0x0AC39BD7u, 0x0F119FE2u, 0x03F8D080u, 0x0F2E9E01u,
+    0x0AAD012Eu, 0x0188CC46u, 0x0711C678u, 0x0E2F0591u, 0x0B28C500u,
+    0x05393B9Cu, 0x0BBE2B75u, 0x0385AC3Bu, 0x014E361Bu, 0x028EEEB1u,
+    0x05710CE4u, 0x07716E60u, 0x044342B2u, 0x0D0D6B8Fu, 0x0317BBDCu,
+    0x02124E2Bu, 0x01777575u
+};
 
 /* Apply the parameters. Called on setup and whenever a parameter changes. */
 static void h5_cymbal_apply(void *engine,
@@ -111,6 +130,7 @@ static void h5_cymbal_apply(void *engine,
     int32_t pitch, bell, noise_tone, decay;
     int32_t fc_attack, fc_tail, tone_freq, tau_q16, tau_samples;
     int64_t step;
+    int m;
 
     if (sample_rate == 0u) {
         sample_rate = H5_DEFAULT_SAMPLE_RATE;
@@ -136,14 +156,44 @@ static void h5_cymbal_apply(void *engine,
     c->noise_gain_q16 = h5_pow07_q16(H5_Q16_ONE - noise_tone);
     c->tone_gain_q16 = h5_pow07_q16(noise_tone);
 
-    /* The strike table step: one table sample per output sample at 48 kHz
+    /* The sustain loop step: one table sample per output sample at 48 kHz
      * and Tone Pitch 1.0. */
     step = (int64_t)H5_CYMBAL_TABLE_RATE * pitch / (int64_t)sample_rate;
     if (step < 1) {
         step = 1;
     }
-    c->attack_step_q16 = (int32_t)step;
     c->loop_step_q16 = (int32_t)step;
+
+    /* The strike modes: their phase steps at Tone Pitch and their decay
+     * coefficients at this sample rate. */
+    for (m = 0; m < H5_CYMBAL_ATTACK_MODES; m++) {
+        int64_t inc = ((int64_t)h5_cymbal_attack_freq_q16[m] << 12)
+            / (int64_t)sample_rate;
+
+        if (inc > (int64_t)INT32_MAX) {
+            inc = INT32_MAX;
+        }
+        inc = h5_scale_q16((int32_t)inc, pitch);
+        if (inc < 1) {
+            inc = 1;
+        }
+        c->attack_inc[m] = (uint32_t)inc;
+
+        tau_samples = (int32_t)(((int64_t)h5_cymbal_attack_tau_q16[m]
+            * sample_rate) >> 16);
+        if (tau_samples < 2) {
+            tau_samples = 2;
+        }
+        c->attack_env_coeff[m] = h5_cymbal_exp_q30(tau_samples);
+    }
+
+    /* The strike noise burst. */
+    tau_samples = (int32_t)(((int64_t)H5_CYMBAL_ATTACK_NOISE_TAU_Q16
+        * sample_rate) >> 16);
+    if (tau_samples < 2) {
+        tau_samples = 2;
+    }
+    c->attack_noise_coeff = h5_cymbal_exp_q30(tau_samples);
 
     /* The wash high-pass and the fixed output high-pass. */
     h5_svf_tune(&c->noise_hp, H5_SVF_HP, c->hp_freq_q16, H5_Q16_ONE,
@@ -197,6 +247,7 @@ void h5_cymbal_setup(void *engine, h5_voice voice,
     const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate)
 {
     struct h5_cymbal_s *c = (struct h5_cymbal_s *)engine;
+    int m;
 
     (void)voice;
 
@@ -205,12 +256,21 @@ void h5_cymbal_setup(void *engine, h5_voice voice,
     }
 
     h5_noise_init_voice(&c->noise, H5_VOICE_CYMBAL, sample_rate);
+    h5_noise_init_voice(&c->attack_noise, H5_VOICE_CYMBAL, sample_rate);
     h5_svf_reset(&c->noise_hp);
     h5_svf_reset(&c->noise_lp);
     h5_svf_reset(&c->tone_bp);
     h5_svf_reset(&c->out_hp);
-    c->attack_phase_q16 = 0;
-    c->attack_step_q16 = 0;
+    for (m = 0; m < H5_CYMBAL_ATTACK_MODES; m++) {
+        c->attack_phase[m] = 0;
+        c->attack_inc[m] = 0;
+        c->attack_env[m] = 0;
+        c->attack_env_coeff[m] = 0;
+    }
+    c->attack_noise_prev = 0;
+    c->attack_noise_env = 0;
+    c->attack_noise_coeff = 0;
+    c->attack_pos = 0;
     c->loop_phase_q16 = 0;
     c->loop_step_q16 = 0;
     c->attack_gain_q16 = 0;
@@ -245,14 +305,26 @@ void h5_cymbal_trigger(void *engine, int32_t level_q16,
     uint32_t sample_rate, uint32_t variant)
 {
     struct h5_cymbal_s *c = (struct h5_cymbal_s *)engine;
+    int m;
 
     (void)sample_rate;
     (void)variant; /* the Cymbal has no open character */
 
     c->level_q16 = level_q16;
-    c->attack_phase_q16 = 0;
     c->loop_phase_q16 = 0;
     c->attack_active = (c->attack_gain_q16 != 0) ? 1u : 0u;
+    c->attack_pos = 0;
+
+    for (m = 0; m < H5_CYMBAL_ATTACK_MODES; m++) {
+        c->attack_phase[m] = h5_cymbal_attack_phase0[m];
+        c->attack_env[m] = (int32_t)1 << 30;
+    }
+    c->attack_noise.x = 0x9E3779B9u;
+    c->attack_noise.held = 0;
+    c->attack_noise.phase = 0;
+    c->attack_noise_prev = 0;
+    c->attack_noise_env = (int32_t)1 << 30;
+
     c->env_slow = (c->tail_gain_q16 != 0) ? ((int32_t)1 << 30) : 0;
     c->env_fast = c->env_slow;
 
@@ -285,30 +357,61 @@ int32_t h5_cymbal_process(void *engine)
         return 0;
     }
 
-    /* The sampled strike. Bend scales the table step with the wash
+    /* The synthesized strike. Bend scales the mode steps with the wash
      * envelope, the same way the drum voices scale their pitch envelope. */
     attack = 0;
     if (c->attack_active != 0u) {
-        attack = h5_cymbal_attack_sample(c->attack_phase_q16);
-        attack = h5_mul_q16(attack, c->attack_gain_q16);
-        attack = h5_mul_q16(attack, c->level_q16);
+        int32_t rate_q16 = H5_Q16_ONE;
+        int32_t raw, n;
+        int m;
 
-        step = c->attack_step_q16;
         if (c->bend_q16 != 0) {
             int32_t semitones = h5_mul_q16(c->bend_q16,
                 (int32_t)h5_shr_round((int64_t)c->env_slow, 14u));
-            int32_t ratio = h5_semitone_ratio_interp(semitones);
+            rate_q16 = h5_semitone_ratio_interp(semitones);
+        }
 
-            step = h5_scale_q16(step, ratio);
+        for (m = 0; m < H5_CYMBAL_ATTACK_MODES; m++) {
+            uint32_t inc = (uint32_t)h5_scale_q16(
+                (int32_t)c->attack_inc[m], rate_q16);
+            int32_t s;
+
+            if (inc < 1u) {
+                inc = 1u;
+            }
+            s = h5_sine_interp(c->attack_phase[m]);
+            c->attack_phase[m] = (c->attack_phase[m] + inc) & 0x0FFFFFFFu;
+            s = h5_mul_q16(s, h5_cymbal_attack_amp_q16[m]);
+            s = h5_cymbal_mul_q30(s, c->attack_env[m]);
+            attack = h5_sat_add_q31(attack, s);
+            c->attack_env[m] = h5_cymbal_mul_q30(c->attack_env[m],
+                c->attack_env_coeff[m]);
         }
-        if (step < 1) {
-            step = 1;
+
+        raw = h5_noise_next(&c->attack_noise) >> 1;
+        n = h5_sat_sub_q31(raw, c->attack_noise_prev);
+        c->attack_noise_prev = raw;
+        n = h5_cymbal_mul_q30(n, c->attack_noise_env);
+        n = h5_mul_q16(n, H5_CYMBAL_ATTACK_NOISE_GAIN_Q16);
+        attack = h5_sat_add_q31(attack, n);
+        c->attack_noise_env = h5_cymbal_mul_q30(c->attack_noise_env,
+            c->attack_noise_coeff);
+
+        c->attack_pos++;
+        if (c->attack_pos >= H5_CYMBAL_ATTACK_LEN - H5_CYMBAL_ATTACK_FADE) {
+            int32_t left = H5_CYMBAL_ATTACK_LEN - c->attack_pos;
+
+            if (left <= 0) {
+                attack = 0;
+                c->attack_active = 0u;
+            } else {
+                attack = h5_mul_q16(attack,
+                    (left << 16) / H5_CYMBAL_ATTACK_FADE);
+            }
         }
-        c->attack_phase_q16 += step;
-        if (c->attack_phase_q16
-            >= (H5_CYMBAL_ATTACK_LEN << 16)) {
-            c->attack_active = 0u;
-        }
+
+        attack = h5_mul_q16(attack, c->attack_gain_q16);
+        attack = h5_mul_q16(attack, c->level_q16);
     }
 
     /* The sustain loop. It is played forward/backward, so the stored

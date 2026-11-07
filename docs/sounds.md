@@ -212,9 +212,10 @@ filter-bend depth, so their noise sweeps close at slightly different rates.
 
 - **Strike and loop.** A synthesized strike: 22 damped inharmonic modes
   plus a short high-passed noise burst, played through variable-rate phase
-  accumulators. A cleaned 50 ms sustain loop, derived from a recorded hit,
-  is played forward/backward under the same envelope. Tone Pitch sets the
-  playback rates; Bend sweeps them over the wash envelope.
+  accumulators. A cleaned 50 ms sustain loop, taken late in the recorded
+  sustain before the final decay where the loop tone is clearest, is played
+  forward/backward under the same envelope. Tone Pitch sets the playback rates; Bend sweeps them
+  over the wash envelope.
 - **Wash.** The loop and the noise generator are summed, then pass a
   two-pole high-pass (Noise Body) and a swept low-pass (Noise and Sweep).
   A resonant band taken from the same high-passed signal supplies the

@@ -68,6 +68,7 @@ TEST_OBJS := $(patsubst test/%.c,$(BUILD)/test/%.o,$(TEST_SRCS))
 HOT_SRCS := \
 	src/h5_engines.c \
 	src/h5_metallic.c \
+	src/h5_cymbal.c \
 	src/h5_filter.c \
 	src/h5_fixed.c \
 	src/h5_fx.c \

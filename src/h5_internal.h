@@ -110,16 +110,7 @@ static inline int16_t h5_sine_at(uint32_t index)
  * scale (peak 32767 << 16). Exact at integer table indices. */
 int32_t h5_sine_interp(uint32_t phase);
 
-#if defined(LIBHIVE_ENGINE_CYMBAL)
-/* The bell wave table: one period of a dense inharmonic wash, Q15. The
- * Cymbal scans it slowly so its upper partials land in the low mids. */
-#define H5_BELL_SIZE 4096
-extern const int16_t h5_bell[H5_BELL_SIZE];
 
-/* Bell table interpolation, linear, same 28-bit phase and Q31 output scale
- * as the sine lookup. */
-int32_t h5_bell_interp(uint32_t phase);
-#endif
 
 /* tan(pi * f / sr) as Q16 from the shared sine table (no libm). Used for
  * the one-pole pre-filter coefficients at parameter change only. */
@@ -354,6 +345,13 @@ struct h5_kick_s {
 /* Number of square oscillators in the metallic bank. */
 #define H5_METALLIC_BANK 10
 
+#if defined(LIBHIVE_ENGINE_CYMBAL)
+/* Length of the Cymbal's measured strike table, one entry per sample at
+ * 48 kHz. */
+#define H5_CYMBAL_ATTACK_LEN 2880
+extern const int16_t h5_cymbal_attack[H5_CYMBAL_ATTACK_LEN];
+#endif
+
 /* Tom voice runtime state. The engine keeps its own copies of the parameters
  * it needs per sample so the audio path never reads the parameter matrix. Each
  * Tom instance has its own envelopes, filters, oscillator and noise state,
@@ -404,8 +402,7 @@ struct h5_snare_s {
     int32_t click_gain_q16;    /* 63/80 * Click^0.25 */
 };
 
-/* Metallic voice runtime state, shared by the Cymbal and the Hi-hat. The
- * engine keeps its own copies of the parameters it needs per sample so the
+/* Hi-hat voice runtime state. The engine keeps its own copies of the parameters it needs per sample so the
  * audio path never reads the parameter matrix. */
 struct h5_metallic_s {
     struct h5_engine_s head;
@@ -419,10 +416,6 @@ struct h5_metallic_s {
     uint32_t phase[H5_METALLIC_BANK];  /* 28-bit phases */
     int32_t inc[H5_METALLIC_BANK];     /* phase increments, bend included */
     int32_t base_inc[H5_METALLIC_BANK]; /* phase increments without the bend */
-#if defined(LIBHIVE_ENGINE_CYMBAL)
-    uint32_t bell_phase;      /* the Cymbal's bell oscillator phase */
-    int32_t bell_inc;         /* its increment, from the Tone Pitch */
-#endif
     int32_t metal_gain_q16;   /* the Bell/Cymbal balance */
     int32_t noise_gain_q16;   /* the Noise/Tone balance and the noise weight */
     int32_t bell_q16;         /* the Bell/Cymbal parameter of the voice */
@@ -430,8 +423,6 @@ struct h5_metallic_s {
     int32_t bell_hit_q16;     /* the Hi-hat's per-hit Bell/Cymbal */
     int32_t noise_tone_hit_q16; /* the Hi-hat's per-hit Noise/Tone */
     int32_t filter_freq_q16;  /* the noise filter's base cutoff, Hz Q16 */
-    int32_t sweep_q16;        /* the filter contour depth, signed Q16 */
-    int32_t bend_q16;         /* the pitch sweep of the bank, semitones Q16 */
     int32_t drive_q16;        /* the saturation blend */
     int32_t decay_q16;        /* the release time, seconds Q16 */
     int32_t hp_k_q30;         /* the noise high-pass coefficient */
@@ -441,8 +432,39 @@ struct h5_metallic_s {
     int32_t wet_hp_state2;    /* its second high-pass state, Q31 */
     int32_t fc_const_q16;     /* the noise filter's cutoff when the sweep is 0 */
     int32_t open_q16;         /* the Open amount, seconds Q16 */
-    uint8_t open;               /* Hi-hat: the hit was triggered open */
-    uint8_t has_open;           /* Hi-hat only; 0 for the Cymbal */
+    uint8_t open;               /* the hit was triggered open */
+};
+
+/* Cymbal voice runtime state. The voice has a short sampled strike played
+ * through a variable-rate phase accumulator, plus a synthesized noise wash
+ * shaped by a fixed high-pass, a swept low-pass and a resonant tone band. */
+struct h5_cymbal_s {
+    struct h5_engine_s head;
+    struct h5_noise_s noise;
+    struct h5_svf_s noise_hp;    /* the wash high-pass, Noise Body */
+    struct h5_svf_s noise_lp;    /* the swept wash low-pass, Noise */
+    struct h5_svf_s tone_bp;     /* the tonal band, Noise/Tone */
+    struct h5_sweep_s lp_sweep;  /* the low-pass coefficients over the sweep */
+    struct h5_svf_s out_hp;      /* fixed output high-pass */
+    int32_t attack_phase_q16;    /* strike table position, Q16 samples */
+    int32_t attack_step_q16;     /* strike table step at Tone Pitch */
+    int32_t attack_gain_q16;     /* Bell/Cymbal side of the attack */
+    int32_t tail_gain_q16;       /* Bell/Cymbal side of the wash */
+    int32_t noise_gain_q16;      /* Noise/Tone side of the wash */
+    int32_t tone_gain_q16;       /* Noise/Tone side of the tonal band */
+    int32_t env_slow;            /* Q30 exponential wash envelope */
+    int32_t env_fast;            /* Q30 fast component of the same envelope */
+    int32_t env_slow_coeff;      /* Q30 decay per sample */
+    int32_t env_fast_coeff;
+    int32_t env_fast_mix_q16;    /* fast component weight */
+    int32_t level_q16;           /* strike level of the current hit */
+    int32_t filter_freq_q16;     /* wash low-pass at the end of the tail */
+    int32_t hp_freq_q16;         /* wash high-pass corner, Noise Body */
+    int32_t sweep_q16;           /* signed low-pass contour */
+    int32_t bend_q16;            /* strike-table pitch sweep, semitones */
+    int32_t pitch_q16;           /* Tone Pitch, the strike-table rate */
+    int32_t decay_q16;           /* wash release, seconds */
+    uint8_t attack_active;       /* the strike table is still playing */
 };
 
 /* One reverb comb line. The delay line lives inside the single FX block. */
@@ -537,12 +559,12 @@ struct h5_context_s {
     int32_t voice_level[H5_INSTR_COUNT];
 
     /* Voice runtime state, initialized by h5_voice_setup_all(). The Toms are
-     * three independent instances of the same engine. The Cymbal and the
-     * Hi-hat share the metallic engine with per-voice configuration. */
+     * three independent instances of the same engine. The Cymbal has its own
+     * engine; the Hi-hat uses the metallic engine. */
     struct h5_kick_s kick;
     struct h5_tom_s tom[H5_TOM_COUNT];
     struct h5_snare_s snare;
-    struct h5_metallic_s cymbal;
+    struct h5_cymbal_s cymbal;
     struct h5_metallic_s hihat;
 };
 
@@ -597,7 +619,7 @@ void h5_tom_trigger(void *engine, int32_t level_q16, uint32_t sample_rate,
     uint32_t variant);
 int32_t h5_tom_process(void *engine);
 
-/* Metallic engines (Cymbal and Hi-hat). Each engine pointer addresses a
+/* Metallic engine (Hi-hat). The engine pointer addresses a
  * struct h5_metallic_s. Times and controls are taken from the context's
  * parameter matrix; the noise generator is seeded per instance and
  * free-runs across triggers so successive hits are not identical. */
@@ -606,6 +628,14 @@ void h5_metallic_setup(void *engine, h5_voice voice,
 void h5_metallic_trigger(void *engine, int32_t level_q16,
     uint32_t sample_rate, uint32_t variant);
 int32_t h5_metallic_process(void *engine);
+
+/* Cymbal engine. The engine pointer addresses a struct h5_cymbal_s. The
+ * strike table is sampled; the wash is synthesized. */
+void h5_cymbal_setup(void *engine, h5_voice voice,
+    const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate);
+void h5_cymbal_trigger(void *engine, int32_t level_q16, uint32_t sample_rate,
+    uint32_t variant);
+int32_t h5_cymbal_process(void *engine);
 
 /* Snare engine. The engine pointer addresses a struct h5_snare_s. */
 void h5_snare_setup(void *engine, h5_voice voice,

@@ -17,12 +17,12 @@ after the library initialization.
 
 ## Features
 
-- Seven simultaneously playable voices built from four engine types (Kick,
-  Snare, Toms 1/2/3 and the metallic engine, which serves the Cymbal and the
-  Hi-hat). The Hi-hat is one voice reachable through two instruments, closed
-  and open.
-- Each metallic voice (Hi-hat, Cymbal) is built from a ten-oscillator
-  square bank, a swept resonant low-pass and a soft-clip stage.
+- Seven simultaneously playable voices built from five engine types (Kick,
+  Snare, Tom, Cymbal and the metallic engine for the Hi-hat). The Hi-hat is
+  one voice reachable through two instruments, closed and open.
+- The Cymbal pairs a short measured strike table with a swept noise wash;
+  the Hi-hat is built from a ten-oscillator triangle bank, a swept resonant
+  low-pass and a saturation stage.
 - Per-instrument volume and pan.
 - Per-voice sound parameters, exposed in physical units.
 - Integrated reverb and noise gate effects with per instrument send levels.
@@ -50,12 +50,11 @@ size; everything else stays at `-Os`.
 
 ## Build options
 
-The metallic engine is optional and gated by preprocessor macros. Undefine
-`LIBHIVE_ENGINE_HIHAT` or `LIBHIVE_ENGINE_CYMBAL` to remove each of the
-instruments using the metallic engine. A disabled voice stays in the public
-API but renders silence and accepts no parameters. The same definitions are
-passed to the test harness, which skips the stages of the engines that are
-not compiled in.
+The Cymbal and the Hi-hat are optional and gated by preprocessor macros.
+Undefine `LIBHIVE_ENGINE_HIHAT` or `LIBHIVE_ENGINE_CYMBAL` to remove each
+engine. A disabled voice stays in the public API but renders silence and
+accepts no parameters. The same definitions are passed to the test harness,
+which skips the stages of the engines that are not compiled in.
 
 ## Usage
 

@@ -1,162 +1,95 @@
 /*
- * h5_metallic.c - the metallic engines (Cymbal and Hi-hat).
+ * h5_metallic.c - the metallic engine (Hi-hat).
  *
- * One engine type serves both voices; they differ in their envelope times,
- * in their noise filter and in the Hi-hat's open/closed trigger variants.
- * The flow is:
+ * The voice runs:
  *
  *   metal = sum_k A_k * tri_k                   10 triangle oscillators
- *   bell  = table(scan(TonePitch))               Cymbal only: the gong body
  *   noise = lcg -> two-pole high-pass -> resonant low-pass
  *   env_m = AR(fixed attack, Decay release)      the metal envelope
  *   env_n = AR(fixed attack, Decay+Open release)  the noise envelope
  *   mix   = metal * BellCymbal^0.7 * env_m^5
- *           + bell * (1-BellCymbal) * env_m        (Cymbal only)
  *           + noise * (1-BellCymbal)^0.7 * (1-NoiseTone)^0.7 * env_n^4
  *   out   = (1-Drive)*mix + Drive*shaper(2*pi*(1+Drive)*mix)
  *
- *   - The bank is ten triangle waves at [1205, 1960, 2461, 3216, 4871,
- *     5626, 6127, 6882, 8536, 9292] Hz. A triangle carries its harmonics
- *     with a 1/k^2 law, so the bank sounds like metal instead of the harsh
- *     odd-harmonic buzz a square stack makes. Each oscillator's amplitude
- *     follows the engine's own weight for it, so the bank has the same
- *     balance between the partials.
- *   - The Tone Pitch scales the Hi-hat's bank (0..1). The Cymbal's bank runs
- *     at its fixed frequencies; its Tone Pitch sets the scan rate of the bell
- *     instead. The Bend sweeps the whole bank down or up over the envelope,
- *     in semitones, with the same depth law the drum voices use.
- *   - The Cymbal also has a bell oscillator: a dense, inharmonic wave table
- *     scanned at a few cycles per second. Its upper partials form the low
- *     and upper body under the wash, so the hit reads as a crash rather
- *     than a thin sheet. The Tone Pitch sets the scan rate and the
- *     Bell/Cymbal balance fades the bell out as the bank takes over.
- *   - The Bell/Cymbal balance is the metal/noise balance: it is the engine's
- *     Click control, and it works with the steep x^0.7 law. The Noise/Tone
- *     balance is the tone amount of the noise path: 1 leaves no noise at
- *     all, 0 leaves all of it.
- *   - The noise is the same LCG the drum voices use, with a two-pole
- *     high-pass and a resonant low-pass whose cutoff follows the envelope.
- *     Both edges are parameters on both voices: Noise is the low-pass
- *     cutoff and Noise Body is the high-pass corner. The Hi-hat keeps only
- *     the sibilant band above its corner. The Sweep is signed: a positive
- *     sweep closes the filter as the sound dies, a negative one opens it,
- *     so the tail is either dull or bright.
- *   - The attack of both envelopes is fixed in samples: 1 ms for the metal
- *     and 5 ms for the noise on both voices. The Decay control is the
- *     release of the metal envelope; the release of the noise envelope is
- *     the Decay plus the Open amount of the Hi-hat.
- *   - The drive stage is a dry path and a saturated path in parallel, the
- *     way the engine does it: the dry path keeps the mix linear and the
- *     saturated path adds the soft-clipped harmonics.
+ * The bank is ten triangle waves at [1205, 1960, 2461, 3216, 4871, 5626,
+ * 6127, 6882, 8536, 9292] Hz, each with its own weight. A triangle carries
+ * its harmonics with a 1/k^2 law, so the bank sounds like metal instead of
+ * the harsh odd-harmonic buzz a square stack makes.
  *
- * Each engine is gated behind its own macro: LIBHIVE_ENGINE_HIHAT for the
- * Hi-hat, LIBHIVE_ENGINE_CYMBAL for the Cymbal. Both are defined by
- * default in the Makefile. When one is undefined, its voice and instruments
- * stay in the public API but render silence and accept no parameters.
+ * The Bell/Cymbal balance is the metal/noise balance and the Noise/Tone
+ * balance is the tone amount of the noise path. The noise is the same LCG
+ * the drum voices use, with a two-pole high-pass and a resonant low-pass.
+ * The Hi-hat keeps only the sibilant band above its corner.
+ *
+ * The attack of both envelopes is fixed in samples. The Decay control is
+ * the release of the metal envelope; the release of the noise envelope is
+ * the Decay plus the Open amount of the Hi-hat. The drive stage is a dry
+ * path and a saturated path in parallel.
+ *
+ * The engine is gated behind LIBHIVE_ENGINE_HIHAT. When it is undefined
+ * the voice and instruments stay in the public API but render silence and
+ * accept no parameters.
  */
 
 #include "h5_internal.h"
-#if defined(LIBHIVE_ENGINE_HIHAT) || defined(LIBHIVE_ENGINE_CYMBAL)
+#if defined(LIBHIVE_ENGINE_HIHAT)
 
 /* The bank frequencies, Hz. */
 static const int32_t h5_metallic_bank[H5_METALLIC_BANK] = {
     1205, 1960, 2461, 3216, 4871, 5626, 6127, 6882, 8536, 9292
 };
 
-/* The bank amplitudes, Q16. Each oscillator's weight in the engine's mix
- * divided by its frequency, normalised to the loudest one. The division by
- * the frequency is the engine's own normalisation: the oscillators are
- * integrated squares there, so their amplitude follows the length of their
- * half period. */
+/* The bank amplitudes, Q16, normalised to the loudest one. */
 static const int32_t h5_metallic_amp[H5_METALLIC_BANK] = {
-    14844, 37709, 24628, 18684, 17642, 16273, 65536, 5708, 8251, 19117
+    41898, 65536, 34131, 19797, 12337, 9847, 36460, 2824, 3297, 7020
 };
 
-/* The gain of the bank in the mix. It puts the engine's metal level on the
- * same scale as its noise level. */
+/* The gain of the bank in the mix. */
 #define H5_METALLIC_METAL_GAIN_Q16 (111411) /* 1.7 */
 
 /* The weight of the noise path in the mix. */
 #define H5_METALLIC_NOISE_WEIGHT_Q16 (51118) /* 0.78 */
 
-/* The noise filter edges of both metallic voices are parameters: Noise sets
- * the low-pass cutoff and Noise Body sets the high-pass corner. */
-
-/* The resonance of the noise filter. It is an engine constant too. */
+/* The noise filter's flat resonance. */
 #define H5_METALLIC_RESONANCE_Q16 H5_Q16_ONE
-
-#if defined(LIBHIVE_ENGINE_CYMBAL)
-/* The Cymbal's bell oscillator scans the inharmonic bell table at a rate set
- * by the Tone Pitch. The rate follows the square of the control, so a low
- * Tone Pitch lays the table's upper partials in the low mids and a high one
- * lifts them towards the wash. The gain places the bell under the bank so it
- * reads as the body of the cymbal rather than a separate tone. */
-#define H5_METALLIC_BELL_RATE_Q16 (425984) /* 6.5 Hz at full Tone Pitch */
-#define H5_METALLIC_BELL_GAIN_Q16 (52429)  /* 0.8 */
-
-/* The highest table partial sits at H5_BELL_SIZE/2 times the scan rate.
- * Limit the phase increment so that partial stays below 45% of the sample
- * rate: 0.45 * 2^28 / (H5_BELL_SIZE/2). */
-#define H5_METALLIC_BELL_INC_MAX (58982)
-#endif
 
 /* The limits of the noise filter's cutoff, Hz. */
 #define H5_METALLIC_FC_MIN_HZ 10
 #define H5_METALLIC_FC_MAX_HZ 14000
 
-/* The high-pass coefficient is a Q30 one-pole weight. Keep it just below
- * unity so an extreme corner at a low sample rate cannot make it unstable. */
+/* The high-pass coefficient is a Q30 one-pole weight. */
 #define H5_METALLIC_HP_K_MAX ((int32_t)0x3FFFFFFF)
 
-/* The drive of the saturation stage, per voice. It is an engine constant:
- * the faceplate has no drive of its own. */
+/* The drive of the saturation stage and the scale of its argument. */
 #define H5_METALLIC_HIHAT_DRIVE_Q16 (8519) /* 0.13 */
-#define H5_METALLIC_CYMBAL_DRIVE_Q16 (9830) /* 0.15 */
-
-/* The scale of the saturation stage's argument: 2*pi*(1+Drive). The drive
- * is fixed per voice, so the scale is a constant too. */
 #define H5_METALLIC_SHAPER_SCALE_Q16 (465000) /* 7.09 */
 
-/* The envelope attack lengths, in samples. The engine's attacks are fixed
- * counts, not times. */
+/* The envelope attack lengths, in samples. */
 #define H5_METALLIC_HIHAT_METAL_ATTACK 48
 #define H5_METALLIC_HIHAT_NOISE_ATTACK 240
-#define H5_METALLIC_CYMBAL_METAL_ATTACK 48
-#define H5_METALLIC_CYMBAL_NOISE_ATTACK 240
 
 /* The release laws of the Hi-hat's envelopes, in seconds:
  *   metal = 0.13*Decay + 0.05*strike + 0.1
- *   noise = Decay + Open + 0.10*strike
- * and of the Cymbal's single envelope: 0.3 + 0.25*Decay. */
+ *   noise = Decay + Open + 0.10*strike */
 #define H5_METALLIC_HIHAT_METAL_DECAY_Q16 (8529) /* 0.13 */
 #define H5_METALLIC_HIHAT_METAL_GAIN_Q16 (3277) /* 0.05 */
 #define H5_METALLIC_HIHAT_NOISE_GAIN_Q16 (6554) /* 0.10 */
 #define H5_METALLIC_HIHAT_NOISE_OPEN_Q16 (45875) /* 0.70 */
-#define H5_METALLIC_CYMBAL_DECAY_Q16 (19661) /* 0.30 */
-#define H5_METALLIC_CYMBAL_DECAY_SCALE_Q16 (16384) /* 0.25 */
 
-/* The Hi-hat softens its balances on a soft hit: the Bell/Cymbal value
- * falls by up to 10% and the Noise/Tone value by up to 50% as the strike
- * level goes to zero, so a soft hit is a little less metallic and noticeably
- * more noisy. Both the closed and the open instruments follow this law; the
- * Cymbal keeps its balances at every velocity. */
+/* The Hi-hat softens its balances on a soft hit. */
 #define H5_METALLIC_HIHAT_BELL_VEL_Q16 (6554)  /* 0.10 */
 #define H5_METALLIC_HIHAT_NOISE_TONE_VEL_Q16 (32768) /* 0.50 */
 
-/* The internal scale of the mix: Q28, so the bank's sum and the noise both
- * fit in an int32_t with the engine's own headroom. */
+/* The internal scale of the mix: Q28. */
 #define H5_METALLIC_Q28_ONE (1 << 28)
 
-/* The start phase of an oscillator of the bank. The oscillators are spread
- * over the period, so their sum does not sit on a common edge and the bank
- * carries no offset of its own. */
+/* The start phase of an oscillator of the bank. */
 static uint32_t h5_metallic_phase(int index)
 {
     return (uint32_t)(((uint64_t)index * 0x10000000ull) / H5_METALLIC_BANK);
 }
 
-/* The triangle of a phase accumulator: the phase is 28 bits, the triangle
- * runs from -0.5 to +0.5 with its peak at the half phase. */
+/* The triangle of a phase accumulator. */
 static int32_t h5_metallic_tri(uint32_t phase)
 {
     uint32_t d = phase & 0x0FFFFFFFu;
@@ -167,8 +100,7 @@ static int32_t h5_metallic_tri(uint32_t phase)
     return (int32_t)((int32_t)(1u << 27) - 2 * (int32_t)u);
 }
 
-/* The envelope times of the two envelopes. The strike level and the Open
- * amount are part of the release, so the times are set at every trigger. */
+/* The envelope times of the two envelopes. */
 static void h5_metallic_env_apply(struct h5_metallic_s *m,
     uint32_t sample_rate)
 {
@@ -176,49 +108,24 @@ static void h5_metallic_env_apply(struct h5_metallic_s *m,
     int32_t level = m->vel.level_q16;
     int32_t attack_q16, release_metal, release_noise;
 
-    if (m->has_open) {
-        /* The Hi-hat: the metal and the noise have their own envelopes. */
-        attack_q16 = (int32_t)(((uint64_t)H5_METALLIC_HIHAT_METAL_ATTACK
-            << 16) / sample_rate);
-        release_metal = h5_mul_q16(decay,
-            H5_METALLIC_HIHAT_METAL_DECAY_Q16)
-            + h5_mul_q16(level, H5_METALLIC_HIHAT_METAL_GAIN_Q16)
-            + (H5_Q16_ONE / 10);
-        release_noise = decay + m->open_q16
-            + h5_mul_q16(level, H5_METALLIC_HIHAT_NOISE_GAIN_Q16);
+    attack_q16 = (int32_t)(((uint64_t)H5_METALLIC_HIHAT_METAL_ATTACK
+        << 16) / sample_rate);
+    release_metal = h5_mul_q16(decay, H5_METALLIC_HIHAT_METAL_DECAY_Q16)
+        + h5_mul_q16(level, H5_METALLIC_HIHAT_METAL_GAIN_Q16)
+        + (H5_Q16_ONE / 10);
+    release_noise = decay + m->open_q16
+        + h5_mul_q16(level, H5_METALLIC_HIHAT_NOISE_GAIN_Q16);
 
-        h5_env_set_times(&m->env_metal, attack_q16, release_metal,
-            sample_rate);
-        attack_q16 = (int32_t)(((uint64_t)H5_METALLIC_HIHAT_NOISE_ATTACK
-            << 16) / sample_rate);
-        h5_env_set_times(&m->env_noise, attack_q16, release_noise,
-            sample_rate);
-    } else {
-        /* The Cymbal: the metal and the noise have their own envelopes.
-         * The metal release is 0.3 + 0.25*Decay, the noise release is the
-         * Decay itself. */
-        attack_q16 = (int32_t)(((uint64_t)H5_METALLIC_CYMBAL_METAL_ATTACK
-            << 16) / sample_rate);
-        release_metal = H5_METALLIC_CYMBAL_DECAY_Q16
-            + h5_mul_q16(decay, H5_METALLIC_CYMBAL_DECAY_SCALE_Q16);
-        h5_env_set_times(&m->env_metal, attack_q16, release_metal,
-            sample_rate);
-        attack_q16 = (int32_t)(((uint64_t)H5_METALLIC_CYMBAL_NOISE_ATTACK
-            << 16) / sample_rate);
-        h5_env_set_times(&m->env_noise, attack_q16, decay, sample_rate);
-    }
+    h5_env_set_times(&m->env_metal, attack_q16, release_metal, sample_rate);
+    attack_q16 = (int32_t)(((uint64_t)H5_METALLIC_HIHAT_NOISE_ATTACK
+        << 16) / sample_rate);
+    h5_env_set_times(&m->env_noise, attack_q16, release_noise, sample_rate);
 }
 
-/* The cutoff of the noise filter for the current envelope. The sweep is
- * signed: a positive sweep closes the filter as the sound dies. */
-static int32_t h5_metallic_cutoff(const struct h5_metallic_s *m,
-    int32_t env_p)
+/* The base cutoff of the noise filter, clamped. */
+static int32_t h5_metallic_cutoff(const struct h5_metallic_s *m)
 {
-    int32_t factor_q16, fc_q16;
-
-    factor_q16 = H5_Q16_ONE - h5_mul_q16(m->sweep_q16,
-        H5_Q16_ONE - (env_p >> 14));
-    fc_q16 = h5_mul_q16(m->filter_freq_q16, factor_q16);
+    int32_t fc_q16 = m->filter_freq_q16;
 
     if (fc_q16 < H5_METALLIC_FC_MIN_HZ * H5_Q16_ONE) {
         fc_q16 = H5_METALLIC_FC_MIN_HZ * H5_Q16_ONE;
@@ -229,24 +136,19 @@ static int32_t h5_metallic_cutoff(const struct h5_metallic_s *m,
     return fc_q16;
 }
 
-/* Recompute the two balance gains from the voice's parameters. The Hi-hat
- * trims its Bell/Cymbal and Noise/Tone values on a soft strike; the Cymbal
- * uses the values as they are. */
+/* Recompute the two balance gains from the voice's parameters. */
 static void h5_metallic_balance_apply(struct h5_metallic_s *m)
 {
     int32_t bell = m->bell_q16;
     int32_t noise_tone = m->noise_tone_q16;
+    int32_t deficit = H5_Q16_ONE - m->vel.level_q16;
+    int32_t bell_scale = H5_Q16_ONE - h5_mul_q16(deficit,
+        H5_METALLIC_HIHAT_BELL_VEL_Q16);
+    int32_t tone_scale = H5_Q16_ONE - h5_mul_q16(deficit,
+        H5_METALLIC_HIHAT_NOISE_TONE_VEL_Q16);
 
-    if (m->has_open) {
-        int32_t deficit = H5_Q16_ONE - m->vel.level_q16;
-        int32_t bell_scale = H5_Q16_ONE - h5_mul_q16(deficit,
-            H5_METALLIC_HIHAT_BELL_VEL_Q16);
-        int32_t tone_scale = H5_Q16_ONE - h5_mul_q16(deficit,
-            H5_METALLIC_HIHAT_NOISE_TONE_VEL_Q16);
-
-        bell = h5_mul_q16(bell, bell_scale);
-        noise_tone = h5_mul_q16(noise_tone, tone_scale);
-    }
+    bell = h5_mul_q16(bell, bell_scale);
+    noise_tone = h5_mul_q16(noise_tone, tone_scale);
 
     m->bell_hit_q16 = bell;
     m->noise_tone_hit_q16 = noise_tone;
@@ -258,14 +160,12 @@ static void h5_metallic_balance_apply(struct h5_metallic_s *m)
         h5_pow07_q16(H5_Q16_ONE - noise_tone));
 }
 
-/* Apply the parameters to one metallic engine. A parameter change goes
- * through here; the engine state is left alone so a sounding voice is not
- * cut. */
+/* Apply the parameters to the engine. */
 static void h5_metallic_apply(void *engine,
     const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate)
 {
     struct h5_metallic_s *m = (struct h5_metallic_s *)engine;
-    int32_t pitch_scale, fc_lo, fc_hi, hp_q16, hp_k, i;
+    int32_t pitch_scale, fc, hp_q16, hp_k, i;
     int64_t acc;
 
     if (sample_rate == 0u) {
@@ -278,34 +178,14 @@ static void h5_metallic_apply(void *engine,
     m->bell_q16 = params[H5_PARAM_BELL_CYMBAL];
     m->noise_tone_q16 = params[H5_PARAM_NOISE_TONE];
 
-    /* Both edges of the noise filter are parameters on both voices: Noise
-     * is the low-pass cutoff and Noise Body is the high-pass corner. The
-     * Hi-hat keeps Bend and Sweep fixed at zero. */
     m->filter_freq_q16 = params[H5_PARAM_NOISE_PITCH];
     hp_q16 = params[H5_PARAM_NOISE_BODY];
 
-    if (m->has_open) {
-        m->bend_q16 = 0;
-        m->sweep_q16 = 0;
-    } else {
-        m->bend_q16 = params[H5_PARAM_BEND];
-        m->sweep_q16 = params[H5_PARAM_SWEEP];
-    }
-
-    /* The Bell/Cymbal balance is the metal/noise balance, and the Noise/Tone
-     * balance is the tone amount of the noise path. Both follow the steep
-     * x^0.7 law of the engine. */
     h5_metallic_balance_apply(m);
 
-    /* The cutoff of a zero sweep does not depend on the envelope, so it is
-     * computed once here instead of on every sample. With a zero sweep the
-     * contour factor is exactly 1, so this is the clamped base cutoff. */
-    m->fc_const_q16 = h5_metallic_cutoff(m, 0);
+    fc = h5_metallic_cutoff(m);
+    m->fc_const_q16 = fc;
 
-    /* The high-pass on the noise: two poles at the voice's corner. Each
-     * coefficient is 1 - exp(-2*pi*fc/sr), in Q30, computed from the corner
-     * in Q16 so the parameter needs no separate conversion. The clamp keeps
-     * the coefficient below unity at low sample rates. */
     hp_k = (int32_t)(((uint64_t)hp_q16 * 6747485820ull)
         / ((uint64_t)sample_rate << 16));
     if (hp_k > H5_METALLIC_HP_K_MAX) {
@@ -313,48 +193,15 @@ static void h5_metallic_apply(void *engine,
     }
     m->hp_k_q30 = hp_k;
 
-    /* Rebuild the bank increments at the new Tone Pitch.
-     * cycles/sample = f / sr; the 28-bit phase adds 2^28, and the bank
-     * entries are plain Hz, so inc = bank * pitch_q16 * 2^12 / sr. The
-     * Cymbal's bank runs at its fixed frequencies; its Tone Pitch drives the
-     * bell oscillator instead. */
+    /* Rebuild the bank increments at the new Tone Pitch. */
     for (i = 0; i < H5_METALLIC_BANK; i++) {
-        int32_t scale = m->has_open ? pitch_scale : H5_Q16_ONE;
-
-        acc = (int64_t)h5_metallic_bank[i] * scale * 4096;
+        acc = (int64_t)h5_metallic_bank[i] * pitch_scale * 4096;
         m->base_inc[i] = (int32_t)(acc / (int64_t)sample_rate);
         m->inc[i] = m->base_inc[i];
     }
 
-#if defined(LIBHIVE_ENGINE_CYMBAL)
-    /* The Cymbal's bell: rate = base * TonePitch^2, as a phase increment.
-     * inc = rate[Hz] * 2^28 / sr, and rate is Q16 Hz, so the Q16 scale
-     * brings 2^28 down to 2^12. */
-    m->bell_inc = 0;
-    if (!m->has_open) {
-        int32_t rate_q16 = h5_mul_q16(H5_METALLIC_BELL_RATE_Q16,
-            h5_mul_q16(pitch_scale, pitch_scale));
-
-        m->bell_inc = (int32_t)(((int64_t)rate_q16 * 4096)
-            / (int64_t)sample_rate);
-        if (m->bell_inc > H5_METALLIC_BELL_INC_MAX) {
-            m->bell_inc = H5_METALLIC_BELL_INC_MAX;
-        }
-    }
-#endif
-
-    /* The noise filter sweeps with the envelope between the two ends of the
-     * sweep range. */
-    fc_lo = h5_metallic_cutoff(m, 0);
-    fc_hi = h5_metallic_cutoff(m, H5_Q16_ONE << 14);
-    if (fc_lo > fc_hi) {
-        int32_t swap = fc_lo;
-
-        fc_lo = fc_hi;
-        fc_hi = swap;
-    }
-    h5_sweep_build(&m->noise_sweep, H5_SVF_LP, H5_METALLIC_RESONANCE_Q16,
-        fc_lo, fc_hi, sample_rate);
+    h5_sweep_build(&m->noise_sweep, H5_SVF_LP,
+        H5_METALLIC_RESONANCE_Q16, fc, fc, sample_rate);
 
     h5_metallic_env_apply(m, sample_rate);
 }
@@ -365,14 +212,15 @@ void h5_metallic_setup(void *engine, h5_voice voice,
     struct h5_metallic_s *m = (struct h5_metallic_s *)engine;
     int i;
 
+    (void)voice;
+
     if (sample_rate == 0u) {
         sample_rate = H5_DEFAULT_SAMPLE_RATE;
     }
 
-    /* Initial state. */
     h5_env_init(&m->env_metal);
     h5_env_init(&m->env_noise);
-    h5_noise_init_voice(&m->noise, voice, sample_rate);
+    h5_noise_init_voice(&m->noise, H5_VOICE_HIHAT, sample_rate);
     h5_svf_reset(&m->noise_filter);
     h5_svf_reset(&m->noise_filter2);
     for (i = 0; i < H5_METALLIC_BANK; i++) {
@@ -380,13 +228,8 @@ void h5_metallic_setup(void *engine, h5_voice voice,
         m->inc[i] = 0;
         m->base_inc[i] = 0;
     }
-#if defined(LIBHIVE_ENGINE_CYMBAL)
-    m->bell_phase = 0;
-    m->bell_inc = 0;
-#endif
     m->open = 0u;
     m->open_q16 = 0;
-    m->has_open = (voice == H5_VOICE_HIHAT) ? 1u : 0u;
     m->hp_state = 0;
     m->hp_state2 = 0;
     m->wet_hp_state = 0;
@@ -396,9 +239,7 @@ void h5_metallic_setup(void *engine, h5_voice voice,
     m->vel.depth_q16 = H5_Q16_ONE;
     m->vel.sweep_q16 = 0;
     m->vel.click_q16 = H5_Q16_ONE;
-    m->drive_q16 = m->has_open
-        ? H5_METALLIC_HIHAT_DRIVE_Q16
-        : H5_METALLIC_CYMBAL_DRIVE_Q16;
+    m->drive_q16 = H5_METALLIC_HIHAT_DRIVE_Q16;
 
     h5_metallic_apply(engine, params, sample_rate);
 }
@@ -415,13 +256,8 @@ void h5_metallic_trigger(void *engine, int32_t level_q16,
     struct h5_metallic_s *m = (struct h5_metallic_s *)engine;
     int i;
 
-    /* The strike level of this hit; the metallic voices take it as a
-     * linear gain. */
     m->vel.level_q16 = level_q16;
-
-    /* Open and closed releases differ on the Hi-hat; recompute the
-     * envelope times for this hit. */
-    m->open = (m->has_open && variant != 0u) ? 1u : 0u;
+    m->open = (variant != 0u) ? 1u : 0u;
     m->open_q16 = m->open ? H5_METALLIC_HIHAT_NOISE_OPEN_Q16 : 0;
     h5_metallic_balance_apply(m);
     h5_metallic_env_apply(m, sample_rate);
@@ -430,9 +266,6 @@ void h5_metallic_trigger(void *engine, int32_t level_q16,
         m->phase[i] = h5_metallic_phase(i);
         m->inc[i] = m->base_inc[i];
     }
-#if defined(LIBHIVE_ENGINE_CYMBAL)
-    m->bell_phase = 0;
-#endif
     h5_env_trigger(&m->env_metal);
     h5_env_trigger(&m->env_noise);
     h5_svf_reset(&m->noise_filter);
@@ -450,9 +283,6 @@ static int32_t h5_metallic_shaper(struct h5_metallic_s *m, int32_t x)
     int64_t arg;
     int32_t wet, dry, lp;
 
-    /* arg = 2*pi*(1+Drive)*mix, clamped to the shaper's input range. The
-     * scale fits an int32_t, so the product stays on the wide-multiply
-     * seam. */
     arg = h5_shr_round(h5_mulwide(x, H5_METALLIC_SHAPER_SCALE_Q16), 16u);
     if (arg > H5_METALLIC_Q28_ONE) {
         arg = H5_METALLIC_Q28_ONE;
@@ -461,13 +291,8 @@ static int32_t h5_metallic_shaper(struct h5_metallic_s *m, int32_t x)
         arg = -H5_METALLIC_Q28_ONE;
     }
 
-    /* The soft clipper reads a Q31 argument of at most 1. */
     wet = h5_softclip_q31(h5_sat_i32((int64_t)arg << 3)) >> 2;
 
-    /* The clipper's products of a broadband mix reach below the voice's
-     * own corner, so the wet path follows the same high-pass as the noise:
-     * two poles at the voice's corner keep the grit inside the band the
-     * voice plays in. */
     lp = m->wet_hp_state + h5_mul_q30(h5_sat_sub_q31(wet, m->wet_hp_state),
         m->hp_k_q30);
     m->wet_hp_state = lp;
@@ -485,13 +310,8 @@ static int32_t h5_metallic_shaper(struct h5_metallic_s *m, int32_t x)
 int32_t h5_metallic_process(void *engine)
 {
     struct h5_metallic_s *m = (struct h5_metallic_s *)engine;
-    int32_t env_m, env_n, env_m3, env_f, metal, noise, mix, x, u, lp;
-    int32_t env_m2, env_m4, env_m5, env_n2, env_n4, env_n3;
-#if defined(LIBHIVE_ENGINE_CYMBAL)
-    int32_t ratio, cutoff, bell;
-#else
-    int32_t ratio, cutoff;
-#endif
+    int32_t env_m, env_n, env_m2, env_m4, env_m5, metal, noise, mix, x, u, lp;
+    int32_t env_n2, env_n4, cutoff;
     int i;
 
     if (!m->head.active) {
@@ -507,17 +327,6 @@ int32_t h5_metallic_process(void *engine)
         return 0;
     }
 
-    /* The bank: ten triangle oscillators. The Bend sweeps the whole bank
-     * with the metal envelope, so the increments follow the envelope. */
-    env_m3 = (m->bend_q16 != 0 || !m->has_open) ? h5_cube_q30(env_m) : 0;
-    if (m->bend_q16 != 0) {
-        ratio = h5_semitone_ratio_interp(
-            (int32_t)h5_shr_round((int64_t)m->bend_q16 * env_m3, 30u));
-        for (i = 0; i < H5_METALLIC_BANK; i++) {
-            m->inc[i] = h5_scale_q16(m->base_inc[i], ratio);
-        }
-    }
-
     metal = 0;
     for (i = 0; i < H5_METALLIC_BANK; i++) {
         m->phase[i] = (m->phase[i] + (uint32_t)m->inc[i]) & 0x0FFFFFFFu;
@@ -527,37 +336,12 @@ int32_t h5_metallic_process(void *engine)
     }
     metal = h5_mul_q16(metal, H5_METALLIC_METAL_GAIN_Q16);
 
-    /* The metal envelope is raised to the fifth power. */
     env_m2 = h5_mul_q30(env_m, env_m);
     env_m4 = h5_mul_q30(env_m2, env_m2);
     env_m5 = h5_mul_q30(env_m4, env_m);
     metal = h5_mul_q16(metal, m->metal_gain_q16);
     metal = h5_mul_q30(metal, env_m5);
 
-#if defined(LIBHIVE_ENGINE_CYMBAL)
-    /* The Cymbal's bell: the slow inharmonic scan is the body of the voice.
-     * It rides the metal envelope, and the Bell/Cymbal balance fades it out
-     * as the bank takes over. At Tone Pitch 0 the scan stops, so the bell
-     * is skipped entirely instead of riding as a constant. */
-    if (!m->has_open && m->bell_inc != 0) {
-        int32_t bell_gain;
-
-        m->bell_phase = (m->bell_phase + (uint32_t)m->bell_inc)
-            & 0x0FFFFFFFu;
-        bell = h5_bell_interp(m->bell_phase) >> 3; /* Q31 -> Q28 */
-        bell_gain = h5_mul_q16(H5_METALLIC_BELL_GAIN_Q16,
-            H5_Q16_ONE - m->bell_hit_q16);
-        bell = h5_mul_q16(bell, bell_gain);
-        bell = h5_mul_q30(bell, env_m);
-        metal = h5_sat_add_q31(metal, bell);
-    }
-#endif
-
-    /* The noise: the LCG, a two-pole high-pass at the voice's corner and
-     * the resonant low-pass whose cutoff follows the envelope. The poles
-     * run at half scale: the innovation of a fast high-pass exceeds one on
-     * a full-scale signal, and the half-scale loop keeps it inside the Q31
-     * range. The scale is restored after the second pole. */
     u = h5_noise_next(&m->noise) >> 1;
     lp = m->hp_state + h5_mul_q30(h5_sat_sub_q31(u, m->hp_state),
         m->hp_k_q30);
@@ -568,27 +352,11 @@ int32_t h5_metallic_process(void *engine)
     m->hp_state2 = lp;
     u = h5_sat_i32((int64_t)h5_sat_sub_q31(u, lp) << 1);
 
-    if (m->has_open) {
-        /* The Hi-hat: the noise envelope is raised to the fourth power,
-         * and it is that envelope that drives the filter. */
-        env_n2 = h5_mul_q30(env_n, env_n);
-        env_n4 = h5_mul_q30(env_n2, env_n2);
-        env_f = env_n4;
-    } else {
-        /* The Cymbal: the noise envelope is raised to the third power, and
-         * it is that same envelope that drives the filter. The contour
-         * therefore follows the wash it shapes: it opens over the noise
-         * attack and closes over the noise release. */
-        env_n3 = h5_cube_q30(env_n);
-        env_n4 = env_n3;
-        env_f = env_n3;
-    }
+    env_n2 = h5_mul_q30(env_n, env_n);
+    env_n4 = h5_mul_q30(env_n2, env_n2);
 
-    cutoff = (m->sweep_q16 == 0)
-        ? m->fc_const_q16 : h5_metallic_cutoff(m, env_f);
+    cutoff = m->fc_const_q16;
     h5_sweep_apply(&m->noise_sweep, cutoff, &m->noise_filter);
-    /* The two sections share the cutoff, so the coefficients interpolated
-     * for the first section are the ones the second needs too. */
     m->noise_filter2.b0 = m->noise_filter.b0;
     m->noise_filter2.a1 = m->noise_filter.a1;
     m->noise_filter2.a2 = m->noise_filter.a2;
@@ -600,23 +368,17 @@ int32_t h5_metallic_process(void *engine)
 
     mix = h5_sat_add_q31(metal, noise);
 
-    /* The strike level, then the saturation stage. */
     x = h5_mul_q16(mix, m->vel.level_q16);
     return h5_sat_i32((int64_t)h5_metallic_shaper(m, x) << 2);
 }
 
-#endif /* LIBHIVE_ENGINE_HIHAT || LIBHIVE_ENGINE_CYMBAL */
-
-/* Engine operation sets. A disabled engine is replaced by a stub that
- * renders silence and never reports activity; the voice and its
- * instruments stay in the public API. */
-
-#if defined(LIBHIVE_ENGINE_HIHAT)
 const struct h5_engine_ops h5_hihat_ops = {
     h5_metallic_setup, h5_metallic_configure, h5_metallic_trigger,
     h5_metallic_process
 };
+
 #else
+
 static void h5_hihat_stub_setup(void *engine, h5_voice voice,
     const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate)
 {
@@ -655,50 +417,5 @@ const struct h5_engine_ops h5_hihat_ops = {
     h5_hihat_stub_setup, h5_hihat_stub_configure,
     h5_hihat_stub_trigger, h5_hihat_stub_process
 };
+
 #endif /* LIBHIVE_ENGINE_HIHAT */
-
-#if defined(LIBHIVE_ENGINE_CYMBAL)
-const struct h5_engine_ops h5_cymbal_ops = {
-    h5_metallic_setup, h5_metallic_configure, h5_metallic_trigger,
-    h5_metallic_process
-};
-#else
-static void h5_cymbal_stub_setup(void *engine, h5_voice voice,
-    const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate)
-{
-    struct h5_engine_s *head = (struct h5_engine_s *)engine;
-
-    (void)voice;
-    (void)params;
-    (void)sample_rate;
-    head->active = 0u;
-}
-
-static void h5_cymbal_stub_configure(void *engine,
-    const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate)
-{
-    (void)engine;
-    (void)params;
-    (void)sample_rate;
-}
-
-static void h5_cymbal_stub_trigger(void *engine, int32_t level_q16,
-    uint32_t sample_rate, uint32_t variant)
-{
-    (void)engine;
-    (void)level_q16;
-    (void)sample_rate;
-    (void)variant;
-}
-
-static int32_t h5_cymbal_stub_process(void *engine)
-{
-    (void)engine;
-    return 0;
-}
-
-const struct h5_engine_ops h5_cymbal_ops = {
-    h5_cymbal_stub_setup, h5_cymbal_stub_configure,
-    h5_cymbal_stub_trigger, h5_cymbal_stub_process
-};
-#endif /* LIBHIVE_ENGINE_CYMBAL */

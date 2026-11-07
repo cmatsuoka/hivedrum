@@ -1934,13 +1934,22 @@ static int command_hihat_velocity_balance(void)
 
 #if H5_TEST_CYMBAL
     /* The Cymbal is not a Hi-hat and keeps its balances at every velocity. */
-    h5_trigger_velocity((h5_context)ctx, H5_INSTR_CYMBAL, 32u);
-    if (ctx->cymbal.bell_hit_q16 != ctx->cymbal.bell_q16
-        || ctx->cymbal.noise_tone_hit_q16 != ctx->cymbal.noise_tone_q16) {
-        fail("a soft Cymbal trims its balances");
-        result = -1;
-    } else {
-        ok("the Cymbal keeps its balances at every velocity");
+    {
+        int32_t attack_before = ctx->cymbal.attack_gain_q16;
+        int32_t tail_before = ctx->cymbal.tail_gain_q16;
+        int32_t noise_before = ctx->cymbal.noise_gain_q16;
+        int32_t tone_before = ctx->cymbal.tone_gain_q16;
+
+        h5_trigger_velocity((h5_context)ctx, H5_INSTR_CYMBAL, 32u);
+        if (ctx->cymbal.attack_gain_q16 != attack_before
+            || ctx->cymbal.tail_gain_q16 != tail_before
+            || ctx->cymbal.noise_gain_q16 != noise_before
+            || ctx->cymbal.tone_gain_q16 != tone_before) {
+            fail("a soft Cymbal trims its balances");
+            result = -1;
+        } else {
+            ok("the Cymbal keeps its balances at every velocity");
+        }
     }
 #endif
 

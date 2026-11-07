@@ -446,14 +446,13 @@ struct h5_metallic_s {
 
 /* Cymbal voice runtime state. The voice has a synthesized modal strike and
  * a cleaned sustain loop, both played through variable-rate phase
- * accumulators, plus a synthesized noise wash shaped by a fixed high-pass,
- * a swept low-pass and a resonant tone band. */
+ * accumulators. Noise/Tone crossfades the noise wash against the loop; the
+ * mix passes a fixed high-pass and a swept low-pass. */
 struct h5_cymbal_s {
     struct h5_engine_s head;
     struct h5_noise_s noise;
     struct h5_svf_s noise_hp;    /* the wash high-pass, Noise Body */
     struct h5_svf_s noise_lp;    /* the swept wash low-pass, Noise */
-    struct h5_svf_s tone_bp;     /* the tonal band, Noise/Tone */
     struct h5_sweep_s lp_sweep;  /* the low-pass coefficients over the sweep */
     struct h5_svf_s out_hp;      /* fixed output high-pass */
     uint32_t attack_phase[H5_CYMBAL_ATTACK_MODES]; /* strike mode phases */
@@ -469,8 +468,8 @@ struct h5_cymbal_s {
     int32_t loop_step_q16;       /* sustain loop step at Tone Pitch */
     int32_t attack_gain_q16;     /* Bell/Cymbal side of the attack */
     int32_t tail_gain_q16;       /* Bell/Cymbal side of the wash */
-    int32_t noise_gain_q16;      /* Noise/Tone side of the wash */
-    int32_t tone_gain_q16;       /* Noise/Tone side of the tonal band */
+    int32_t noise_gain_q16;      /* Noise/Tone side of the noise wash */
+    int32_t tone_gain_q16;       /* Noise/Tone side of the sampled loop */
     int32_t env_slow;            /* Q30 exponential wash envelope */
     int32_t env_fast;            /* Q30 fast component of the same envelope */
     int32_t env_slow_coeff;      /* Q30 decay per sample */

@@ -214,52 +214,44 @@ filter-bend depth, so their noise sweeps close at slightly different rates.
   plus a short high-passed noise burst, played through variable-rate phase
   accumulators. A cleaned 50 ms sustain loop, taken late in the recorded
   sustain before the final decay where the loop tone is clearest, is played
-  forward/backward under the same envelope. Tone Pitch sets the playback rates; Bend sweeps them
-  over the wash envelope.
-- **Wash.** The loop and the noise generator are summed, then pass a
-  two-pole high-pass (Noise Body) and a swept low-pass (Noise and Sweep).
-  A resonant band taken from the same high-passed signal supplies the
-  tonal side of the Noise/Tone balance. The wash uses an exponential
-  release, so its level falls by a nearly constant number of decibels per
-  second through the tail.
-- **Mix.** Bell/Cymbal trades the synthesized strike against the wash, and
-  Noise/Tone trades the noisy wash against its tonal band. The parts share
-  the strike level.
-- **Output.** The mix passes a fixed high-pass and a soft clipper.
+  forward/backward under the same envelope. Tone Pitch sets the playback
+  rates; Bend sweeps them over the wash envelope.
+- **Wash.** Noise/Tone crossfades the broadband noise wash against the
+  sampled loop: 0 leaves only noise, 1 leaves only the loop. The mix passes
+  a two-pole high-pass (Noise Body) and a swept low-pass (Noise and Sweep),
+  then the wash envelope. The wash uses an exponential release, so its level
+  falls by a nearly constant number of decibels per second through the tail.
+- **Mix.** Bell/Cymbal trades the synthesized strike against the wash.
+- **Output.** The mix passes a fixed high-pass, a +6 dB makeup gain and a
+  soft clipper.
 
 ```
- Strike modes ─▶[ variable-rate read ]─▶[ strike VCA ]◀┄┄┄ Bell/Cymbal
-                                                │
-   Loop table ──▶[ ping-pong read ]──┐          │
-                                     │          │
-                 Noise ──────────────┴─▶[ Σ ]   │
-                                          │     │
-                                          ▼     │
-                                    [ 2-pole HP ] ◀┄┄┄ Noise Body
-                                          │
-                                          ├──▶[ tonal band ]──┐
-                                          ▼                   │
-                                    [ swept LP ] ◀┄┄┄ Noise, Sweep
-                                          │                   │
-                                          ▼                   ▼
-                                    [ wash VCA ] ◀┄┄┄ Bell/Cymbal, Noise/Tone
-                                          │                   │
-                                          ▼                   │
-                                        [ Σ ] ◀───────────────┘
-                                          │
-                                          ▼
-                                    [ HP 90 Hz ]
-                                          │
-                                          ▼
-                                    [ soft clip ]
-                                          │
-                                          ▼
-                                         OUT
+ Strike modes ─▶[ variable-rate read ]─▶[ strike VCA ]◀┄ Bell/Cymbal
+                                                                    │
+ Loop table ──▶[ ping-pong read ]──┐                                      │
+ Noise ────────────────────────────┴─▶[ Noise/Tone mix ]─▶[ 2-pole HP ]──┤
+                                                                ▲ Noise Body
+                                                                │           │
+                                                          [ swept LP ] ◀┄ Noise, Sweep
+                                                                │           │
+                                                          [ wash VCA ] ◀┄ Bell/Cymbal
+                                                                │           │
+                                                                ▼           ▼
+                                                              [ Σ ]
+                                                                │
+                                                                ▼
+                                                          [ HP 90 Hz ]
+                                                                │
+                                                                ▼
+                                                           [ soft clip ]
+                                                                │
+                                                                ▼
+                                                               OUT
 ```
 
 The strike modes carry the common transient of the instrument; the loop
-and wash carry the metallic body and the long sizzle, with the per-register
-decay differences shaped by the Sweep contour.
+carries the metallic body and the noise wash carries the sizzle, with the
+per-register decay differences shaped by the Sweep contour.
 
 ## Hi-hat
 

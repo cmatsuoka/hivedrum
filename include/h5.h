@@ -91,8 +91,8 @@ typedef enum {
  * faceplates.
  * The Cymbal supports Sweep, Tone Pitch, Bend, Decay, Noise/Tone,
  * Bell/Cymbal, Noise and Noise Body. Tone Pitch sets the strike and loop
- * playback rates and Bend sweeps them; Noise and Noise Body are
- * the two edges of its wash filter, Sweep moves the low-pass contour, and
+ * playback rates and Bend sweeps them; Noise and Noise Body are the two
+ * edges of its wash filter, Sweep moves the low-pass contour, and
  * Decay sets the wash release. The Hi-hat supports Noise, Tone Pitch, Decay,
  * Noise/Tone, Bell/Cymbal and Noise Body: its Bend and Sweep are fixed at
  * zero, Noise and Noise Body are the two edges of its noise filter, and

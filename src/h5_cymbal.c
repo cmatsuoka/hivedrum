@@ -11,16 +11,16 @@
  *   - A cleaned sustain loop, derived from recorded audio data and replayed
  *     forward/backward under the same envelope. The loop supplies the
  *     metallic body; it is mixed with the noise before the wash filters.
- *   - A synthesized wash: the noise generator through a high-pass
- *     (Noise Body) and a swept low-pass (Noise and Sweep), plus a resonant
- *     band for the tonal part of the Noise/Tone balance. The wash has an
- *     exponential release, so its level falls by a nearly constant number
- *     of decibels per second through the tail.
+ *   - A synthesized wash: Noise/Tone crossfades the noise generator against
+ *     the sampled loop, then the mix passes a high-pass (Noise Body) and a
+ *     swept low-pass (Noise and Sweep). The wash has an exponential release,
+ *     so its level falls by a nearly constant number of decibels per second
+ *     through the tail.
  *
  * The Bell/Cymbal balance trades the synthesized strike against the wash, and
- * Noise/Tone trades the noisy part of the wash against its tonal band.
- * The two parts share the strike level and leave through a fixed high-pass
- * and a soft clipper.
+ * Noise/Tone crossfades the noise wash against the sampled loop. The two
+ * parts share the strike level and leave through a fixed high-pass and a soft
+ * clipper.
  *
  * The engine is gated behind LIBHIVE_ENGINE_CYMBAL. When it is undefined
  * the voice and instrument stay in the public API but render silence and
@@ -34,13 +34,8 @@
 /* The sampled loop's own rate. */
 #define H5_CYMBAL_TABLE_RATE 48000
 
-/* The wash low-pass and the tonal band. */
+/* The wash low-pass. */
 #define H5_CYMBAL_LP_Q_Q16 H5_Q16_ONE
-#define H5_CYMBAL_TONE_Q_Q16 (3 * H5_Q16_ONE)
-
-/* The tonal band sits between these frequencies as Tone Pitch moves. */
-#define H5_CYMBAL_TONE_LO_HZ 1800
-#define H5_CYMBAL_TONE_SPAN_HZ 4200
 
 /* The fixed output high-pass. */
 #define H5_CYMBAL_OUT_HP_HZ 90
@@ -55,9 +50,12 @@
 #define H5_CYMBAL_FAST_DIV 8
 #define H5_CYMBAL_FAST_MIX_Q16 (19661) /* 0.30 */
 
-/* The wash and tone gains. */
+/* The wash gain and the Noise/Tone source levels. The loop table is quieter
+ * than the full-scale noise generator, so the loop is lifted to meet it. */
 #define H5_CYMBAL_WASH_GAIN_Q16 (58982) /* 0.9 */
-#define H5_CYMBAL_TONE_GAIN_Q16 (131072) /* 2.0 */
+#define H5_CYMBAL_NOISE_LEVEL_Q16 (26214) /* 0.4 */
+#define H5_CYMBAL_LOOP_LEVEL_Q16 (72090) /* 1.1 */
+#define H5_CYMBAL_OUTPUT_GAIN_Q16 (131072) /* 2.0, +6 dB */
 
 /* The strike's noise burst and its level. */
 #define H5_CYMBAL_ATTACK_NOISE_TAU_Q16 262 /* 4 ms */
@@ -128,7 +126,7 @@ static void h5_cymbal_apply(void *engine,
 {
     struct h5_cymbal_s *c = (struct h5_cymbal_s *)engine;
     int32_t pitch, bell, noise_tone, decay;
-    int32_t fc_attack, fc_tail, tone_freq, tau_q16, tau_samples;
+    int32_t fc_attack, fc_tail, tau_q16, tau_samples;
     int64_t step;
     int m;
 
@@ -149,12 +147,15 @@ static void h5_cymbal_apply(void *engine,
     c->hp_freq_q16 = params[H5_PARAM_NOISE_BODY];
 
     /* The Bell/Cymbal balance trades the strike against the wash, and
-     * Noise/Tone trades the noisy wash against the tonal band. Both use
+     * Noise/Tone trades the noise wash against the sampled loop. Both use
      * the soft x^0.7 law. */
     c->attack_gain_q16 = h5_pow07_q16(bell);
     c->tail_gain_q16 = h5_pow07_q16(H5_Q16_ONE - bell);
-    c->noise_gain_q16 = h5_pow07_q16(H5_Q16_ONE - noise_tone);
-    c->tone_gain_q16 = h5_pow07_q16(noise_tone);
+    c->noise_gain_q16 = h5_mul_q16(
+        h5_pow07_q16(H5_Q16_ONE - noise_tone),
+        H5_CYMBAL_NOISE_LEVEL_Q16);
+    c->tone_gain_q16 = h5_mul_q16(h5_pow07_q16(noise_tone),
+        H5_CYMBAL_LOOP_LEVEL_Q16);
 
     /* The sustain loop step: one table sample per output sample at 48 kHz
      * and Tone Pitch 1.0. */
@@ -201,11 +202,6 @@ static void h5_cymbal_apply(void *engine,
     h5_svf_tune(&c->out_hp, H5_SVF_HP,
         H5_CYMBAL_OUT_HP_HZ * H5_Q16_ONE, H5_CYMBAL_OUT_HP_Q, sample_rate);
 
-    /* The tonal band. */
-    tone_freq = (H5_CYMBAL_TONE_LO_HZ * H5_Q16_ONE)
-        + h5_mul_q16(H5_CYMBAL_TONE_SPAN_HZ * H5_Q16_ONE, pitch);
-    h5_svf_tune(&c->tone_bp, H5_SVF_BP, tone_freq, H5_CYMBAL_TONE_Q_Q16,
-        sample_rate);
 
     /* The wash low-pass contour: at the strike it sits at the Noise
      * setting, and it moves toward (1 - Sweep) times that value as the
@@ -259,7 +255,6 @@ void h5_cymbal_setup(void *engine, h5_voice voice,
     h5_noise_init_voice(&c->attack_noise, H5_VOICE_CYMBAL, sample_rate);
     h5_svf_reset(&c->noise_hp);
     h5_svf_reset(&c->noise_lp);
-    h5_svf_reset(&c->tone_bp);
     h5_svf_reset(&c->out_hp);
     for (m = 0; m < H5_CYMBAL_ATTACK_MODES; m++) {
         c->attack_phase[m] = 0;
@@ -330,7 +325,6 @@ void h5_cymbal_trigger(void *engine, int32_t level_q16,
 
     h5_svf_reset(&c->noise_hp);
     h5_svf_reset(&c->noise_lp);
-    h5_svf_reset(&c->tone_bp);
     h5_svf_reset(&c->out_hp);
     c->head.active = 1u;
 }
@@ -338,7 +332,7 @@ void h5_cymbal_trigger(void *engine, int32_t level_q16,
 int32_t h5_cymbal_process(void *engine)
 {
     struct h5_cymbal_s *c = (struct h5_cymbal_s *)engine;
-    int32_t env, env16, attack, u, hp, lp, bp, wash, mix;
+    int32_t env, env16, attack, u, hp, lp, wash, mix;
     int32_t step, loop;
 
     if (!c->head.active) {
@@ -466,18 +460,15 @@ int32_t h5_cymbal_process(void *engine)
 
     /* The high-pass runs at half scale: the innovation of a fast high-pass
      * exceeds one on a full-scale signal, and the half-scale loop keeps it
-     * inside the Q31 range. The scale is restored after the filter chain. */
-    u = h5_noise_next(&c->noise) >> 1;
-    u = h5_sat_add_q31(u, loop >> 1);
+     * inside the Q31 range. The scale is restored after the filter chain.
+     * Noise/Tone mixes the noise wash against the sampled loop. */
+    u = h5_mul_q16(h5_noise_next(&c->noise), c->noise_gain_q16) >> 1;
+    u = h5_sat_add_q31(u,
+        h5_mul_q16(loop, c->tone_gain_q16) >> 1);
     hp = h5_svf_run(&c->noise_hp, u);
     lp = h5_svf_run(&c->noise_lp, hp);
-    bp = h5_svf_run(&c->tone_bp, hp);
 
-    wash = h5_sat_add_q31(
-        h5_mul_q16(h5_mul_q16(lp, c->noise_gain_q16),
-            H5_CYMBAL_WASH_GAIN_Q16),
-        h5_mul_q16(h5_mul_q16(bp, c->tone_gain_q16),
-            H5_CYMBAL_TONE_GAIN_Q16));
+    wash = h5_mul_q16(lp, H5_CYMBAL_WASH_GAIN_Q16);
     wash = h5_sat_i32((int64_t)wash << 1);
     wash = h5_mul_q30(wash, env);
     wash = h5_mul_q16(wash, c->tail_gain_q16);
@@ -485,6 +476,7 @@ int32_t h5_cymbal_process(void *engine)
 
     mix = h5_sat_add_q31(attack, wash);
     mix = h5_svf_run(&c->out_hp, mix);
+    mix = h5_mul_q16(mix, H5_CYMBAL_OUTPUT_GAIN_Q16);
 
     return h5_softclip_q31(mix);
 }

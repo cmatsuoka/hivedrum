@@ -48,7 +48,7 @@
 /* The wash envelope has a fast component that gives the first part of the
  * tail its extra drop, and a slow component that owns the long release. */
 #define H5_CYMBAL_FAST_DIV 8
-#define H5_CYMBAL_FAST_MIX_Q16 (19661) /* 0.30 */
+#define H5_CYMBAL_FAST_MIX_Q16 (32768) /* 0.50 */
 
 /* The wash gain and the Noise/Tone source levels. The loop table is quieter
  * than the full-scale noise generator, so the loop is lifted to meet it. */

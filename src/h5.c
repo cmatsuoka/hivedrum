@@ -1,5 +1,5 @@
 /*
- * h5.c - Hive-V context lifecycle, trigger/mixer API and render entry point.
+ * h5.c - Libhive context lifecycle, trigger/mixer API and render entry point.
  *
  * This file provides the context lifecycle, the instrument-level wrappers and
  * the render entry point.
@@ -117,8 +117,10 @@ void h5_process(h5_context handle, int16_t *stereo_out, size_t frames)
     for (i = 0u; i < frames; i++) {
         int64_t left = 0;
         int64_t right = 0;
+#if H5_FX_ENABLED
         int64_t fx_left = 0;
         int64_t fx_right = 0;
+#endif
         h5_voice voice;
 
         /* Visit only the voices that are still sounding. Bits are cleared as
@@ -139,6 +141,7 @@ void h5_process(h5_context handle, int16_t *stereo_out, size_t frames)
 
                 h5_mix_add(ctx, voice, out, &left, &right);
 
+#if H5_FX_ENABLED
                 /* The FX bus takes the voice output in the Q30 engine
                  * domain and uses the Q16 send gain directly. The mix bus
                  * doubles its contribution, so the bus does the same: both
@@ -149,6 +152,7 @@ void h5_process(h5_context handle, int16_t *stereo_out, size_t frames)
                     fx_left += (int64_t)h5_mul_q16(out, ctx->fx_gain_left[voice]) * 2;
                     fx_right += (int64_t)h5_mul_q16(out, ctx->fx_gain_right[voice]) * 2;
                 }
+#endif
 
                 volume = ctx->voice_params[voice][H5_PARAM_VOLUME];
                 level = (int64_t)out * (int64_t)volume;
@@ -174,6 +178,7 @@ void h5_process(h5_context handle, int16_t *stereo_out, size_t frames)
             }
         }
 
+#if H5_FX_ENABLED
         if (ctx->fx_any_send) {
             int32_t wet_l;
             int32_t wet_r;
@@ -182,19 +187,27 @@ void h5_process(h5_context handle, int16_t *stereo_out, size_t frames)
             left += wet_l;
             right += wet_r;
         }
+#endif
 
         stereo_out[2u * i] = h5_mix_to_q15(left);
         stereo_out[2u * i + 1u] = h5_mix_to_q15(right);
 
-        if (ctx->active_mask == 0u
-            && !(ctx->fx_any_send && h5_fx_busy(ctx))) {
-            size_t remaining = frames - i - 1u;
+        /* The block is finished when no voice sounds and the FX bus has no
+         * tail left. Without the bus there is no tail to wait for. */
+        {
+            bool finished = (ctx->active_mask == 0u);
+#if H5_FX_ENABLED
+            finished = finished && !(ctx->fx_any_send && h5_fx_busy(ctx));
+#endif
+            if (finished) {
+                size_t remaining = frames - i - 1u;
 
-            if (remaining > 0u) {
-                memset(&stereo_out[2u * (i + 1u)], 0,
-                    remaining * 2u * sizeof(int16_t));
+                if (remaining > 0u) {
+                    memset(&stereo_out[2u * (i + 1u)], 0,
+                        remaining * 2u * sizeof(int16_t));
+                }
+                return;
             }
-            return;
         }
     }
 }

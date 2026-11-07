@@ -62,6 +62,8 @@
  * omits it to keep the per-sample cost down.
  */
 
+#include <string.h>
+
 #include "h5_internal.h"
 
 /* log2(1.5) in Q16.16. Scaling the bend depth by this converts the engine's
@@ -552,24 +554,11 @@ void h5_kick_setup(void *engine, h5_voice voice,
     }
 
     /* Initial state. */
+    memset(k, 0, sizeof(*k));
     h5_env_init(&k->env_noise);
     h5_env_init(&k->env_tone);
     h5_env_init(&k->env_click);
     h5_noise_init_voice(&k->noise, H5_VOICE_KICK, sample_rate);
-    h5_svf_reset(&k->noise_filter);
-    h5_svf_reset(&k->out_filter);
-    k->phase = 0u;
-    k->base_inc = 0;
-    k->bend_q16 = 0;
-    k->noise_pitch_q16 = 0;
-    k->tone_gain_q16 = 0;
-    k->noise_gain_q16 = 0;
-    k->click_gain_q16 = 0;
-    k->pf.k50 = 0;
-    k->pf.k20 = 0;
-    k->pf.l50 = 0;
-    k->pf.l20 = 0;
-    k->head.active = 0u;
     h5_velocity_full(&k->vel);
 
     h5_kick_apply(engine, params, sample_rate);
@@ -747,25 +736,12 @@ void h5_tom_setup(void *engine, h5_voice voice,
     }
 
     /* Initial state. */
+    memset(t, 0, sizeof(*t));
     h5_env_init(&t->env);
     h5_env_init(&t->env_click);
     h5_noise_init_voice(&t->noise, voice, sample_rate);
-    h5_svf_reset(&t->noise_filter);
-    h5_svf_reset(&t->out_filter);
-    t->phase = 0u;
-    t->base_inc = 0;
-    t->bend_q16 = 0;
-    t->noise_pitch_q16 = 0;
-    t->filter_bend_q16 = H5_TOM_FILTER_BEND_1_Q16;
-    t->tone_gain_q16 = 0;
-    t->noise_gain_q16 = 0;
-    t->click_gain_q16 = 0;
-    t->pf.k50 = 0;
-    t->pf.k20 = 0;
-    t->pf.l50 = 0;
-    t->pf.l20 = 0;
-    t->head.active = 0u;
     h5_velocity_full(&t->vel);
+    t->filter_bend_q16 = H5_TOM_FILTER_BEND_1_Q16;
     if (voice == H5_VOICE_TOM_2) {
         t->filter_bend_q16 = H5_TOM_FILTER_BEND_2_Q16;
     } else if (voice == H5_VOICE_TOM_3) {
@@ -944,7 +920,6 @@ void h5_snare_setup(void *engine, h5_voice voice,
     const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate)
 {
     struct h5_snare_s *sn = (struct h5_snare_s *)engine;
-    size_t i;
 
     (void)voice;
 
@@ -953,26 +928,10 @@ void h5_snare_setup(void *engine, h5_voice voice,
     }
 
     /* Initial state. */
+    memset(sn, 0, sizeof(*sn));
     h5_env_init(&sn->env);
     h5_env_init(&sn->env_click);
     h5_noise_init_voice(&sn->noise, H5_VOICE_SNARE, sample_rate);
-    for (i = 0u; i < 4u; i++) {
-        h5_svf_reset(&sn->rattle[i]);
-    }
-    h5_svf_reset(&sn->out_filter);
-    h5_svf_reset(&sn->hp_filter);
-    sn->phase = 0u;
-    sn->base_inc = 0;
-    sn->bend_q16 = 0;
-    sn->noise_pitch_q16 = 0;
-    sn->tone_gain_q16 = 0;
-    sn->noise_gain_q16 = 0;
-    sn->click_gain_q16 = 0;
-    sn->pf.k50 = 0;
-    sn->pf.k20 = 0;
-    sn->pf.l50 = 0;
-    sn->pf.l20 = 0;
-    sn->head.active = 0u;
     h5_velocity_full(&sn->vel);
 
     h5_snare_apply(engine, params, sample_rate);

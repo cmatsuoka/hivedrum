@@ -57,6 +57,30 @@ engine. A disabled voice stays in the public API but renders silence and
 accepts no parameters. The same definitions are passed to the test harness,
 which skips the stages of the engines that are not compiled in.
 
+The effects bus is optional too. `LIBHIVE_FX_REVERB` compiles the reverb and
+the delay memory it works on; `LIBHIVE_FX_NOISE_GATE` compiles the gate that
+shapes the reverb's return. The gate acts on that return, so it needs the
+reverb and cannot be built without it. Without the reverb the bus has no wet
+signal, so the send parameter and the FX parameters report themselves
+unsupported and the bus renders silence.
+
+Both knobs are set in the Makefile and can be overridden on the command line:
+
+```sh
+make                                   # the default: every engine and effect
+make ENGINE_DEFS=-DLIBHIVE_ENGINE_HIHAT   # no Cymbal
+make ENGINE_DEFS=                    # no Cymbal, no Hi-hat
+make FX_DEFS=-DLIBHIVE_FX_REVERB      # reverb without the noise gate
+make FX_DEFS=                         # no effects bus at all
+```
+
+The same definitions reach the test harness, which then skips the FX stages.
+
+`LIBHIVE_XTRA_PRECISION` keeps the stages that only refine the sound below
+the audible level: the Snare's second drive harmonic and the Cymbal's cubic
+term in the decay series. The Makefile never defines it; add
+`-DLIBHIVE_XTRA_PRECISION` to `CFLAGS` by hand to enable it.
+
 ## Usage
 
 ```c

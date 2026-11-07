@@ -20,6 +20,14 @@
 /* All parameters of a disabled engine: unsupported and unclamped. */
 #define OFF { H5_PARAM_UNSUPPORTED, H5_PARAM_UNSUPPORTED, H5_PARAM_UNSUPPORTED }
 
+/* The FX send parameter. Without the FX bus there is nothing to send to,
+ * so the parameter is unsupported and unclamped. */
+#if H5_FX_ENABLED
+#define FXSEND { 0, Q, 0 }
+#else
+#define FXSEND OFF
+#endif
+
 /* Mixer Volume spans 0 .. 2. The nominal unity gain (1.0) is the middle of
  * the range, so the control reaches from silence to unity over its lower
  * half and leaves the upper half as boost headroom. Each voice's default
@@ -42,7 +50,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = VOL(Q),
         [H5_PARAM_PAN]         = { 0,      Q,        Q / 2 },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
-        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
+        [H5_PARAM_FX_SEND]     = FXSEND,
     },
     [H5_VOICE_SNARE] = {
         [H5_PARAM_NOISE_PITCH] = { I(900), I(14000), 871563264 },
@@ -56,7 +64,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = VOL(Q),
         [H5_PARAM_PAN]         = { 0,      Q,        32768 },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
-        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
+        [H5_PARAM_FX_SEND]     = FXSEND,
     },
     [H5_VOICE_TOM_1] = {
         [H5_PARAM_NOISE_PITCH] = { I(900), I(16000), I(8377) },
@@ -70,7 +78,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = VOL(Q),
         [H5_PARAM_PAN]         = { 0,      Q,        F(3, 5) },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
-        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
+        [H5_PARAM_FX_SEND]     = FXSEND,
     },
     [H5_VOICE_TOM_2] = {
         [H5_PARAM_NOISE_PITCH] = { I(900), I(16000), I(8398) },
@@ -84,7 +92,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = VOL(Q),
         [H5_PARAM_PAN]         = { 0,      Q,        Q / 2 },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
-        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
+        [H5_PARAM_FX_SEND]     = FXSEND,
     },
     [H5_VOICE_TOM_3] = {
         [H5_PARAM_NOISE_PITCH] = { I(900), I(16000), I(8419) },
@@ -98,7 +106,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = VOL(Q),
         [H5_PARAM_PAN]         = { 0,      Q,        F(2, 5) },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
-        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
+        [H5_PARAM_FX_SEND]     = FXSEND,
     },
     /* The Cymbal has its own faceplate: Sweep, Tone Pitch, Bend, Decay,
      * Noise/Tone, Bell/Cymbal, Noise (the wash low-pass) and Noise Body
@@ -122,7 +130,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = VOL(Q),
         [H5_PARAM_PAN]         = { 0,      Q,        Q / 2 },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
-        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
+        [H5_PARAM_FX_SEND]     = FXSEND,
     },
 #else
     [H5_VOICE_CYMBAL] = {
@@ -139,7 +147,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = OFF,
         [H5_PARAM_PAN]         = OFF,
         [H5_PARAM_SENSITIVITY] = OFF,
-        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
+        [H5_PARAM_FX_SEND]     = FXSEND,
     },
 #endif
 #ifdef LIBHIVE_ENGINE_HIHAT
@@ -157,7 +165,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = VOL(2 * F(49, 100)),
         [H5_PARAM_PAN]         = { 0,      Q,        Q / 2 },
         [H5_PARAM_SENSITIVITY] = { 0,      Q,        Q },
-        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
+        [H5_PARAM_FX_SEND]     = FXSEND,
     },
 #else
     [H5_VOICE_HIHAT] = {
@@ -174,7 +182,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_VOLUME]      = OFF,
         [H5_PARAM_PAN]         = OFF,
         [H5_PARAM_SENSITIVITY] = OFF,
-        [H5_PARAM_FX_SEND]     = { 0,      Q,        0 },
+        [H5_PARAM_FX_SEND]     = FXSEND,
     },
 #endif
 };

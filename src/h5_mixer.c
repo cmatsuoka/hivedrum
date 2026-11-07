@@ -12,6 +12,7 @@
 
 #include "h5_internal.h"
 
+#if H5_FX_ENABLED
 static void h5_fx_any_update(struct h5_context_s *ctx)
 {
     h5_voice voice;
@@ -24,20 +25,26 @@ static void h5_fx_any_update(struct h5_context_s *ctx)
         }
     }
 }
+#endif
 
 void h5_mix_update(struct h5_context_s *ctx, h5_voice voice)
 {
     const int32_t volume = ctx->voice_params[voice][H5_PARAM_VOLUME];
     const int32_t pan = ctx->voice_params[voice][H5_PARAM_PAN];
-    const int32_t send = ctx->voice_params[voice][H5_PARAM_FX_SEND];
 
-    ctx->fx_send[voice] = send;
     ctx->mix_left[voice] = h5_mul_q16(volume, H5_Q16_ONE - pan);
     ctx->mix_right[voice] = h5_mul_q16(volume, pan);
-    ctx->fx_gain_left[voice] = h5_mul_q16(ctx->mix_left[voice], send);
-    ctx->fx_gain_right[voice] = h5_mul_q16(ctx->mix_right[voice], send);
 
-    h5_fx_any_update(ctx);
+#if H5_FX_ENABLED
+    {
+        const int32_t send = ctx->voice_params[voice][H5_PARAM_FX_SEND];
+
+        ctx->fx_gain_left[voice] = h5_mul_q16(ctx->mix_left[voice], send);
+        ctx->fx_gain_right[voice] = h5_mul_q16(ctx->mix_right[voice], send);
+
+        h5_fx_any_update(ctx);
+    }
+#endif
 }
 
 void h5_mix_update_all(struct h5_context_s *ctx)

@@ -1,7 +1,7 @@
 /*
- * h5.h - public API of the Hive-V library.
+ * h5.h - public API of the Libhive library.
  *
- * Hive-V is a seven-voice percussion synthesizer arranged as a drum kit:
+ * Libhive is a seven-voice percussion synthesizer arranged as a drum kit:
  * Kick, Snare, Tom 1, Tom 2, Tom 3, Cymbal and Hi-hat. The library renders a
  * single stereo mix into a caller-supplied buffer. It has no I/O and no
  * floating point. A context is created with h5_create_context().
@@ -10,8 +10,8 @@
  * The context is an opaque handle (h5_context).
  */
 
-#ifndef HIVE_V_H5_H
-#define HIVE_V_H5_H
+#ifndef LIBHIVE_H5_H
+#define LIBHIVE_H5_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -322,4 +322,4 @@ h5_status h5_trigger_velocity(h5_context ctx, h5_instrument instrument,
 } /* extern "C" */
 #endif
 
-#endif /* HIVE_V_H5_H */
+#endif /* LIBHIVE_H5_H */

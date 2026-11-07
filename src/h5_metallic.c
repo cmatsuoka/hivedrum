@@ -31,6 +31,8 @@
  * accept no parameters.
  */
 
+#include <string.h>
+
 #include "h5_internal.h"
 #if defined(LIBHIVE_ENGINE_HIHAT)
 
@@ -188,7 +190,6 @@ static void h5_metallic_apply(void *engine,
     h5_metallic_balance_apply(m);
 
     fc = h5_metallic_cutoff(m);
-    m->fc_const_q16 = fc;
 
     hp_k = (int32_t)(((uint64_t)hp_q16 * 6747485820ull)
         / ((uint64_t)sample_rate << 16));
@@ -204,8 +205,13 @@ static void h5_metallic_apply(void *engine,
         m->inc[i] = m->base_inc[i];
     }
 
-    h5_sweep_build(&m->noise_sweep, H5_SVF_LP,
-        H5_METALLIC_RESONANCE_Q16, fc, fc, sample_rate);
+    /* The noise filter's cutoff never moves, so its coefficients are fixed
+     * and are computed here rather than per sample. The filter's state is
+     * separate and is cleared by the setup and trigger paths. */
+    h5_svf_tune(&m->noise_filter, H5_SVF_LP, fc,
+        H5_METALLIC_RESONANCE_Q16, sample_rate);
+    h5_svf_tune(&m->noise_filter2, H5_SVF_LP, fc,
+        H5_METALLIC_RESONANCE_Q16, sample_rate);
 
     h5_metallic_env_apply(m, sample_rate);
 }
@@ -222,35 +228,18 @@ void h5_metallic_setup(void *engine, h5_voice voice,
         sample_rate = H5_DEFAULT_SAMPLE_RATE;
     }
 
+    memset(m, 0, sizeof(*m));
     h5_env_init(&m->env_metal);
     h5_env_init(&m->env_noise);
     h5_noise_init_voice(&m->noise, H5_VOICE_HIHAT, sample_rate);
-    h5_svf_reset(&m->noise_filter);
-    h5_svf_reset(&m->noise_filter2);
     for (i = 0; i < H5_METALLIC_BANK; i++) {
         m->phase[i] = h5_metallic_phase(i);
-        m->inc[i] = 0;
-        m->base_inc[i] = 0;
     }
-    m->open = 0u;
-    m->open_q16 = 0;
-    m->hp_state = 0;
-    m->hp_state2 = 0;
-    m->wet_hp_state = 0;
-    m->wet_hp_state2 = 0;
-    m->head.active = 0u;
     m->vel.level_q16 = H5_Q16_ONE;
     m->vel.depth_q16 = H5_Q16_ONE;
-    m->vel.sweep_q16 = 0;
     m->vel.click_q16 = H5_Q16_ONE;
     m->drive_q16 = H5_METALLIC_HIHAT_DRIVE_Q16;
 
-    h5_metallic_apply(engine, params, sample_rate);
-}
-
-void h5_metallic_configure(void *engine,
-    const int32_t params[H5_PARAM_COUNT], uint32_t sample_rate)
-{
     h5_metallic_apply(engine, params, sample_rate);
 }
 
@@ -315,7 +304,7 @@ int32_t h5_metallic_process(void *engine)
 {
     struct h5_metallic_s *m = (struct h5_metallic_s *)engine;
     int32_t env_m, env_n, env_m2, env_m4, env_m5, metal, noise, mix, x, u, lp;
-    int32_t env_n2, env_n4, cutoff;
+    int32_t env_n2, env_n4;
     int i;
 
     if (!m->head.active) {
@@ -359,12 +348,6 @@ int32_t h5_metallic_process(void *engine)
     env_n2 = h5_mul_q30(env_n, env_n);
     env_n4 = h5_mul_q30(env_n2, env_n2);
 
-    cutoff = m->fc_const_q16;
-    h5_sweep_apply(&m->noise_sweep, cutoff, &m->noise_filter);
-    m->noise_filter2.b0 = m->noise_filter.b0;
-    m->noise_filter2.a1 = m->noise_filter.a1;
-    m->noise_filter2.a2 = m->noise_filter.a2;
-    m->noise_filter2.mode = m->noise_filter.mode;
     noise = h5_svf_run(&m->noise_filter, u);
     noise = h5_svf_run(&m->noise_filter2, noise);
     noise = h5_mul_q16(noise >> 3, m->noise_gain_q16);
@@ -382,7 +365,7 @@ int32_t h5_metallic_process(void *engine)
 }
 
 const struct h5_engine_ops h5_hihat_ops = {
-    h5_metallic_setup, h5_metallic_configure, h5_metallic_trigger,
+    h5_metallic_setup, h5_metallic_apply, h5_metallic_trigger,
     h5_metallic_process
 };
 

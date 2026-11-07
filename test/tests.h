@@ -1,5 +1,5 @@
 /*
- * tests.h - per-voice render checks for the Hive-V test harness.
+ * tests.h - per-voice render checks for the Libhive test harness.
  */
 
 #ifndef TESTS_H
@@ -20,6 +20,22 @@
 #define H5_TEST_CYMBAL 1
 #else
 #define H5_TEST_CYMBAL 0
+#endif
+
+/* The FX bus is optional too: the reverb is compiled in behind
+ * LIBHIVE_FX_REVERB and the noise gate behind LIBHIVE_FX_NOISE_GATE. The
+ * Makefile passes the same definitions to the library and to the harness,
+ * so a trimmed build skips the FX stages it cannot run. */
+#if defined(LIBHIVE_FX_REVERB)
+#define H5_TEST_FX_REVERB 1
+#else
+#define H5_TEST_FX_REVERB 0
+#endif
+
+#if defined(LIBHIVE_FX_NOISE_GATE)
+#define H5_TEST_FX_GATE 1
+#else
+#define H5_TEST_FX_GATE 0
 #endif
 
 int command_kick(void);

@@ -1,5 +1,5 @@
 /*
- * dsp.h - fixed-point DSP checks for the Hive-V test harness.
+ * dsp.h - fixed-point DSP checks for the Libhive test harness.
  */
 
 #ifndef DSP_H

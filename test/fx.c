@@ -10,6 +10,20 @@
 #include "h5_internal.h"
 #include "tests.h"
 
+/* The FX bus is optional: the reverb behind LIBHIVE_FX_REVERB and the
+ * noise gate behind LIBHIVE_FX_NOISE_GATE. The Makefile passes the same
+ * definitions to the library and to the harness, so a trimmed build skips
+ * the stages it cannot run instead of failing them. */
+#if !H5_TEST_FX_REVERB
+
+int command_fx(void)
+{
+    printf("skip: the FX bus is not compiled in\n");
+    return 0;
+}
+
+#else
+
 #define FX_RATE 44100u
 #define FX_SECONDS 3u
 #define FX_FRAMES (FX_RATE * FX_SECONDS)
@@ -44,6 +58,8 @@ static int32_t sample_abs(int16_t v)
     return (v < 0) ? -(int32_t)v : (int32_t)v;
 }
 
+#if H5_TEST_FX_GATE
+
 static int32_t peak_abs(const int16_t *buffer, size_t begin, size_t end)
 {
     int32_t peak = 0;
@@ -62,6 +78,8 @@ static int32_t peak_abs(const int16_t *buffer, size_t begin, size_t end)
     }
     return peak;
 }
+
+#endif /* H5_TEST_FX_GATE */
 
 static size_t last_above(const int16_t *buffer, size_t frames, int32_t level)
 {
@@ -244,6 +262,8 @@ static int test_wet_level(void)
 /* -40 dBFS in Q15 LSB. */
 #define FX_MINUS_40_DBFS 328
 
+#if H5_TEST_FX_GATE
+
 static void setup_gate(struct h5_context_s *ctx, int32_t range)
 {
     h5_set_fx_param((h5_context)ctx, H5_FX_ROOM_SIZE, H5_Q16_ONE);
@@ -342,6 +362,8 @@ static int test_gate(void)
     return failures;
 }
 
+#endif /* H5_TEST_FX_GATE */
+
 static int test_levels(void)
 {
     struct h5_context_s *ctx = fx_new(FX_RATE);
@@ -386,7 +408,9 @@ static int test_ram(void)
 static int test_invalid(void)
 {
     struct h5_context_s *ctx = fx_new(FX_RATE);
+#if H5_TEST_FX_GATE
     int32_t value = 0;
+#endif
 
     if (h5_set_fx_param((h5_context)ctx, H5_FX_PARAM_COUNT, 0)
         != H5_ERR_INVALID_PARAM) {
@@ -401,6 +425,7 @@ static int test_invalid(void)
         ok("h5_set_fx_param() rejects a NULL context");
     }
 
+#if H5_TEST_FX_GATE
     if (h5_set_fx_param((h5_context)ctx, H5_FX_GATE_THRESHOLD,
         H5_Q16_ONE * 2) != H5_ERR_RANGE) {
         fail("h5_set_fx_param() did not clamp an out-of-range threshold");
@@ -420,6 +445,7 @@ static int test_invalid(void)
     } else {
         ok("h5_set_fx_param() clamps and stores the hold time");
     }
+#endif
 
     if (h5_get_fx_param((h5_context)ctx, H5_FX_WET, 0)
         != H5_ERR_INVALID_PARAM) {
@@ -459,7 +485,11 @@ int command_fx(void)
     test_bit_identical();
     test_tail();
     test_wet_level();
+#if H5_TEST_FX_GATE
     test_gate();
+#else
+    printf("skip: the noise gate is not compiled in\n");
+#endif
     test_levels();
     test_ram();
     test_invalid();
@@ -467,3 +497,5 @@ int command_fx(void)
 
     return failures == 0 ? 0 : 1;
 }
+
+#endif /* !H5_TEST_FX_REVERB */

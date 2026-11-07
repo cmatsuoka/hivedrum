@@ -1,5 +1,5 @@
 /*
- * main.c - test harness for the Hive-V library.
+ * main.c - test harness for the Libhive library.
  *
  * Commands:
  *   --init              report the context size and the default sample rate
@@ -65,16 +65,16 @@ static struct h5_context_s *context_new(uint32_t sample_rate)
 }
 
 /* The metallic voices are optional engines: a voice whose engine is not
- * compiled in supports no parameter at all, so it is not checked here.
- * The Cymbal is behind LIBHIVE_ENGINE_CYMBAL and the Hi-hat behind
+ * compiled in supports no parameter at all, so its faceplate is not
+ * checked. The Cymbal is behind LIBHIVE_ENGINE_CYMBAL and the Hi-hat behind
  * LIBHIVE_ENGINE_HIHAT. */
+static int metallic_voice_present(h5_voice voice)
+{
+    return (voice == H5_VOICE_CYMBAL) ? H5_TEST_CYMBAL : H5_TEST_HIHAT;
+}
+
 static int metallic_param_supported(h5_voice voice, h5_param param)
 {
-    int present = (voice == H5_VOICE_CYMBAL) ? H5_TEST_CYMBAL : H5_TEST_HIHAT;
-
-    if (!present) {
-        return 1;
-    }
     return h5_param_supported(voice, param) ? 1 : 0;
 }
 
@@ -84,8 +84,12 @@ static int command_init(void)
 
     printf("context size        : %lu bytes\n",
         (unsigned long)sizeof(struct h5_context_s));
+#if H5_TEST_FX_REVERB
     printf("fx delay block      : %lu bytes\n",
         (unsigned long)ctx->fx.block_size);
+#else
+    printf("fx delay block      : not compiled in\n");
+#endif
     printf("default sample rate : %u Hz\n", (unsigned)H5_DEFAULT_SAMPLE_RATE);
 
     if (ctx->sample_rate != H5_DEFAULT_SAMPLE_RATE) {
@@ -363,8 +367,12 @@ static int command_api(void)
         !h5_param_supported(H5_VOICE_TOM_1, H5_PARAM_SENSITIVITY) ||
         !h5_param_supported(H5_VOICE_TOM_2, H5_PARAM_SENSITIVITY) ||
         !h5_param_supported(H5_VOICE_TOM_3, H5_PARAM_SENSITIVITY) ||
-        !metallic_param_supported(H5_VOICE_CYMBAL, H5_PARAM_SENSITIVITY) ||
-        !metallic_param_supported(H5_VOICE_HIHAT, H5_PARAM_SENSITIVITY)) {
+        (metallic_voice_present(H5_VOICE_CYMBAL) &&
+            !metallic_param_supported(H5_VOICE_CYMBAL,
+                H5_PARAM_SENSITIVITY)) ||
+        (metallic_voice_present(H5_VOICE_HIHAT) &&
+            !metallic_param_supported(H5_VOICE_HIHAT,
+                H5_PARAM_SENSITIVITY))) {
         fail("h5_param_supported() does not report Sensitivity on every voice");
     } else if (h5_get_param((h5_context)ctx, H5_VOICE_SNARE,
             H5_PARAM_SENSITIVITY, &value) != H5_OK ||
@@ -434,33 +442,39 @@ static int command_api(void)
         size_t pi;
         int missing = 0;
 
-        for (pi = 0u;
-            pi < sizeof(cymbal_faceplate) / sizeof(cymbal_faceplate[0]);
-            pi++) {
-            if (!metallic_param_supported(H5_VOICE_CYMBAL,
-                    cymbal_faceplate[pi])) {
-                missing++;
+        if (metallic_voice_present(H5_VOICE_CYMBAL)) {
+            for (pi = 0u;
+                pi < sizeof(cymbal_faceplate) / sizeof(cymbal_faceplate[0]);
+                pi++) {
+                if (!metallic_param_supported(H5_VOICE_CYMBAL,
+                        cymbal_faceplate[pi])) {
+                    missing++;
+                }
+            }
+            for (pi = 0u;
+                pi < sizeof(cymbal_absent) / sizeof(cymbal_absent[0]);
+                pi++) {
+                if (metallic_param_supported(H5_VOICE_CYMBAL,
+                        cymbal_absent[pi])) {
+                    missing++;
+                }
             }
         }
-        for (pi = 0u;
-            pi < sizeof(cymbal_absent) / sizeof(cymbal_absent[0]); pi++) {
-            if (metallic_param_supported(H5_VOICE_CYMBAL,
-                    cymbal_absent[pi])) {
-                missing++;
+        if (metallic_voice_present(H5_VOICE_HIHAT)) {
+            for (pi = 0u;
+                pi < sizeof(hihat_faceplate) / sizeof(hihat_faceplate[0]);
+                pi++) {
+                if (!metallic_param_supported(H5_VOICE_HIHAT,
+                        hihat_faceplate[pi])) {
+                    missing++;
+                }
             }
-        }
-        for (pi = 0u;
-            pi < sizeof(hihat_faceplate) / sizeof(hihat_faceplate[0]);
-            pi++) {
-            if (!metallic_param_supported(H5_VOICE_HIHAT,
-                    hihat_faceplate[pi])) {
-                missing++;
-            }
-        }
-        for (pi = 0u;
-            pi < sizeof(hihat_absent) / sizeof(hihat_absent[0]); pi++) {
-            if (metallic_param_supported(H5_VOICE_HIHAT, hihat_absent[pi])) {
-                missing++;
+            for (pi = 0u;
+                pi < sizeof(hihat_absent) / sizeof(hihat_absent[0]); pi++) {
+                if (metallic_param_supported(H5_VOICE_HIHAT,
+                        hihat_absent[pi])) {
+                    missing++;
+                }
             }
         }
         if (missing != 0) {
@@ -493,8 +507,10 @@ static int command_api(void)
                 missing++;
             }
         }
-        if (metallic_param_supported(H5_VOICE_CYMBAL, H5_PARAM_DRIVE) ||
-            metallic_param_supported(H5_VOICE_HIHAT, H5_PARAM_DRIVE)) {
+        if ((metallic_voice_present(H5_VOICE_CYMBAL) &&
+                metallic_param_supported(H5_VOICE_CYMBAL, H5_PARAM_DRIVE)) ||
+            (metallic_voice_present(H5_VOICE_HIHAT) &&
+                metallic_param_supported(H5_VOICE_HIHAT, H5_PARAM_DRIVE))) {
             missing++;
         }
         if (missing != 0) {

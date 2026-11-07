@@ -98,5 +98,9 @@ bool h5_is_active(const h5_context handle)
     if (ctx->active_mask != 0u) {
         return true;
     }
+#if H5_FX_ENABLED
     return ctx->fx_any_send != 0u && h5_fx_busy(ctx);
+#else
+    return false;
+#endif
 }

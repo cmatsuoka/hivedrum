@@ -7,21 +7,19 @@
  * channels. The delay memory is a single block sized once for 48 kHz; active
  * line lengths follow the sample rate and the room size, so the bus never
  * allocates after context creation.
+ *
+ * The two effects are optional. LIBHIVE_FX_REVERB compiles the reverb and
+ * the delay memory it works on; LIBHIVE_FX_NOISE_GATE compiles the gate
+ * that shapes the reverb's return. The gate acts on the reverb's return, so
+ * it needs the reverb and cannot be built without it. Without the reverb the
+ * bus has no wet signal at all, so the send parameter and the FX parameters
+ * report themselves unsupported and the bus renders silence.
  */
 
 #include "h5_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
-
-/* Comb and allpass tuning at 44.1 kHz, in samples. */
-static const uint16_t h5_fx_comb_base[H5_FX_COMBS] = {
-    1116u, 1188u, 1277u, 1356u, 1422u, 1491u, 1557u, 1617u
-};
-
-static const uint16_t h5_fx_allpass_base[H5_FX_ALLPASSES] = {
-    556u, 441u, 341u, 225u
-};
 
 #define H5_FX_INPUT_GAIN_Q31 ((int32_t)0x7FFFFFFF) /* 1.0 */
 #define H5_FX_FB_Q31 ((int32_t)1804886016)         /* 0.84, round half up */
@@ -33,16 +31,44 @@ static const uint16_t h5_fx_allpass_base[H5_FX_ALLPASSES] = {
 #define I(v) ((int32_t)(v) * Q)
 #define F(num, den) ((int32_t)(((int64_t)(num) * Q + ((den) / 2u)) / (den)))
 
-const struct h5_param_info h5_fx_param_table[H5_FX_PARAM_COUNT] = {
-    [H5_FX_ROOM_SIZE] = { 0, Q, F(1, 2) },
-    [H5_FX_DAMPING] = { 0, Q, F(35, 100) },
-    [H5_FX_WIDTH] = { 0, Q, F(8, 10) },
-    [H5_FX_WET] = { 0, Q, F(1, 2) },
-    [H5_FX_GATE_THRESHOLD] = { 0, Q, F(3, 100) },
-    [H5_FX_GATE_ATTACK] = { 0, I(5), F(5, 1000) },
-    [H5_FX_GATE_HOLD] = { 0, I(5), F(30, 100) },
-    [H5_FX_GATE_RELEASE] = { 0, I(5), F(6, 100) },
-    [H5_FX_GATE_RANGE] = { 0, Q, Q },
+/* A parameter of an effect that is not compiled in is unsupported: its
+ * minimum is the unsupported marker, so the setter and the getter report
+ * H5_ERR_UNSUPPORTED and the value is not stored. */
+#if H5_FX_REVERB
+#define FX_REVERB_PARAM(min, max, def) { (min), (max), (def) }
+#else
+#define FX_REVERB_PARAM(min, max, def) \
+    { H5_PARAM_UNSUPPORTED, H5_PARAM_UNSUPPORTED, 0 }
+#endif
+
+#if H5_FX_NOISE_GATE
+#define FX_GATE_PARAM(min, max, def) { (min), (max), (def) }
+#else
+#define FX_GATE_PARAM(min, max, def) \
+    { H5_PARAM_UNSUPPORTED, H5_PARAM_UNSUPPORTED, 0 }
+#endif
+
+static const struct h5_param_info h5_fx_param_table[H5_FX_PARAM_COUNT] = {
+    [H5_FX_ROOM_SIZE] = FX_REVERB_PARAM(0, Q, F(1, 2)),
+    [H5_FX_DAMPING] = FX_REVERB_PARAM(0, Q, F(35, 100)),
+    [H5_FX_WIDTH] = FX_REVERB_PARAM(0, Q, F(8, 10)),
+    [H5_FX_WET] = FX_REVERB_PARAM(0, Q, F(1, 2)),
+    [H5_FX_GATE_THRESHOLD] = FX_GATE_PARAM(0, Q, F(3, 100)),
+    [H5_FX_GATE_ATTACK] = FX_GATE_PARAM(0, I(5), F(5, 1000)),
+    [H5_FX_GATE_HOLD] = FX_GATE_PARAM(0, I(5), F(30, 100)),
+    [H5_FX_GATE_RELEASE] = FX_GATE_PARAM(0, I(5), F(6, 100)),
+    [H5_FX_GATE_RANGE] = FX_GATE_PARAM(0, Q, Q),
+};
+
+#if H5_FX_REVERB
+
+/* Comb and allpass tuning at 44.1 kHz, in samples. */
+static const uint16_t h5_fx_comb_base[H5_FX_COMBS] = {
+    1116u, 1188u, 1277u, 1356u, 1422u, 1491u, 1557u, 1617u
+};
+
+static const uint16_t h5_fx_allpass_base[H5_FX_ALLPASSES] = {
+    556u, 441u, 341u, 225u
 };
 
 static uint32_t h5_fx_comb_alloc(uint32_t base)
@@ -80,7 +106,9 @@ void h5_fx_defaults(struct h5_context_s *ctx)
     h5_fx_param p;
 
     for (p = 0; p < H5_FX_PARAM_COUNT; p++) {
-        ctx->fx_params[p] = h5_fx_param_table[p].default_value;
+        if (h5_fx_param_table[p].min != H5_PARAM_UNSUPPORTED) {
+            ctx->fx_params[p] = h5_fx_param_table[p].default_value;
+        }
     }
 }
 
@@ -91,13 +119,13 @@ int h5_fx_init(struct h5_context_s *ctx)
     int line;
     int16_t *cursor;
 
-    for (ch = 0; ch < 2; ch++) {
-        for (line = 0; line < H5_FX_COMBS; line++) {
-            total += h5_fx_comb_alloc(h5_fx_comb_base[line]);
-        }
-        for (line = 0; line < H5_FX_ALLPASSES; line++) {
-            total += h5_fx_allpass_alloc(h5_fx_allpass_base[line]);
-        }
+    /* The two channels have the same line lengths, so each line's size is
+     * counted twice instead of walking the per-channel tables. */
+    for (line = 0; line < H5_FX_COMBS; line++) {
+        total += 2u * (size_t)h5_fx_comb_alloc(h5_fx_comb_base[line]);
+    }
+    for (line = 0; line < H5_FX_ALLPASSES; line++) {
+        total += 2u * (size_t)h5_fx_allpass_alloc(h5_fx_allpass_base[line]);
     }
 
     ctx->fx.block = (int16_t *)calloc(total, sizeof(int16_t));
@@ -112,7 +140,6 @@ int h5_fx_init(struct h5_context_s *ctx)
             struct h5_comb_s *c = &ctx->fx.comb[ch][line];
 
             c->alloc = h5_fx_comb_alloc(h5_fx_comb_base[line]);
-            c->len = c->alloc;
             c->pos = 0u;
             c->lp = 0;
             c->line = cursor;
@@ -124,7 +151,6 @@ int h5_fx_init(struct h5_context_s *ctx)
             struct h5_allpass_s *a = &ctx->fx.allpass[ch][line];
 
             a->alloc = h5_fx_allpass_alloc(h5_fx_allpass_base[line]);
-            a->len = a->alloc;
             a->pos = 0u;
             a->line = cursor;
             cursor += a->alloc;
@@ -145,22 +171,8 @@ void h5_fx_free(struct h5_context_s *ctx)
 void h5_fx_configure(struct h5_context_s *ctx)
 {
     const int32_t room = ctx->fx_params[H5_FX_ROOM_SIZE];
-    const int32_t damping = ctx->fx_params[H5_FX_DAMPING];
-    const int32_t width = ctx->fx_params[H5_FX_WIDTH];
-    const int32_t wet = ctx->fx_params[H5_FX_WET];
-    const int32_t threshold = ctx->fx_params[H5_FX_GATE_THRESHOLD];
-    const int32_t attack = ctx->fx_params[H5_FX_GATE_ATTACK];
-    const int32_t hold = ctx->fx_params[H5_FX_GATE_HOLD];
-    const int32_t release = ctx->fx_params[H5_FX_GATE_RELEASE];
-    const int32_t range = ctx->fx_params[H5_FX_GATE_RANGE];
     const uint32_t rate = ctx->sample_rate;
     int32_t scale_q16;
-    int32_t width_q31;
-    int32_t wet_q31;
-    int32_t thr_q31;
-    int32_t floor_q31;
-    uint32_t attack_samples;
-    uint32_t release_samples;
     int ch;
     int line;
 
@@ -168,82 +180,90 @@ void h5_fx_configure(struct h5_context_s *ctx)
         return;
     }
 
-    /* The room size scales the comb lines from 0.6x to 2.0x. */
+    /* The room size scales the comb lines from 0.6x to 2.0x. The lengths
+     * depend on the line index only, so they are held once per line rather
+     * than once per line and channel. */
     scale_q16 = 39321 + (int32_t)(((int64_t)room * 91750) >> 16);
-    for (ch = 0; ch < 2; ch++) {
-        for (line = 0; line < H5_FX_COMBS; line++) {
-            struct h5_comb_s *c = &ctx->fx.comb[ch][line];
-            int64_t len = (int64_t)h5_fx_comb_base[line] * scale_q16
-                * (int64_t)rate;
+    for (line = 0; line < H5_FX_COMBS; line++) {
+        int64_t len = (int64_t)h5_fx_comb_base[line] * scale_q16
+            * (int64_t)rate;
 
-            len /= (65536LL * 44100LL);
-            if (len < 16) {
-                len = 16;
-            }
-            if (len > (int64_t)c->alloc) {
-                len = (int64_t)c->alloc;
-            }
-            c->len = (uint32_t)len;
+        len /= (65536LL * 44100LL);
+        if (len < 16) {
+            len = 16;
         }
-        for (line = 0; line < H5_FX_ALLPASSES; line++) {
-            struct h5_allpass_s *a = &ctx->fx.allpass[ch][line];
-            int64_t len = (int64_t)h5_fx_allpass_base[line]
-                * (int64_t)rate / 44100LL;
+        if (len > (int64_t)ctx->fx.comb[0][line].alloc) {
+            len = (int64_t)ctx->fx.comb[0][line].alloc;
+        }
+        ctx->fx.comb_len[line] = (uint32_t)len;
+    }
+    for (line = 0; line < H5_FX_ALLPASSES; line++) {
+        int64_t len = (int64_t)h5_fx_allpass_base[line] * (int64_t)rate
+            / 44100LL;
 
-            if (len < 16) {
-                len = 16;
-            }
-            if (len > (int64_t)a->alloc) {
-                len = (int64_t)a->alloc;
-            }
-            a->len = (uint32_t)len;
-            if (a->pos >= a->len) {
-                a->pos = 0u;
+        if (len < 16) {
+            len = 16;
+        }
+        if (len > (int64_t)ctx->fx.allpass[0][line].alloc) {
+            len = (int64_t)ctx->fx.allpass[0][line].alloc;
+        }
+        ctx->fx.allpass_len[line] = (uint32_t)len;
+        for (ch = 0; ch < 2; ch++) {
+            if (ctx->fx.allpass[ch][line].pos >= ctx->fx.allpass_len[line]) {
+                ctx->fx.allpass[ch][line].pos = 0u;
             }
         }
     }
 
-    ctx->fx.room_q16 = room;
     /* The damping coefficient is the one-pole's share of the new sample:
      * the larger it is, the closer the filter follows the comb's output
      * and the brighter the tail stays. The parameter therefore runs the
      * other way round: damping 0 is the bright tail, damping 1 the dark
      * one, as the header says. */
-    ctx->fx.damp_q16 = 49152 - (int32_t)(((int64_t)damping * 39322) >> 16);
+    ctx->fx.damp_q16 = 49152
+        - (int32_t)(((int64_t)ctx->fx_params[H5_FX_DAMPING] * 39322) >> 16);
 
-    width_q31 = h5_q16_to_q31_full(width);
-    ctx->fx.width_q31 = width_q31;
+    ctx->fx.width_q31 = h5_q16_to_q31_full(ctx->fx_params[H5_FX_WIDTH]);
+    ctx->fx.wet_q31 = h5_q16_to_q31_full(ctx->fx_params[H5_FX_WET]);
 
-    wet_q31 = h5_q16_to_q31_full(wet);
-    ctx->fx.wet_q31 = wet_q31;
+#if H5_FX_NOISE_GATE
+    ctx->fx.thr_open_q31 = h5_q16_to_q31_full(
+        ctx->fx_params[H5_FX_GATE_THRESHOLD]);
+    ctx->fx.thr_close_q31 = ctx->fx.thr_open_q31 >> 1;
 
-    thr_q31 = h5_q16_to_q31_full(threshold);
-    ctx->fx.thr_open_q31 = thr_q31;
-    ctx->fx.thr_close_q31 = thr_q31 >> 1;
+    {
+        const int32_t range = ctx->fx_params[H5_FX_GATE_RANGE];
+        int32_t floor_q31 = (int32_t)((int64_t)H5_FX_FULL
+            - ((int64_t)range << 15));
 
-    floor_q31 = (int32_t)((int64_t)H5_FX_FULL
-        - ((int64_t)range << 15));
-    if (floor_q31 < 0) {
-        floor_q31 = 0;
+        if (floor_q31 < 0) {
+            floor_q31 = 0;
+        }
+        if (floor_q31 > H5_FX_FULL) {
+            floor_q31 = H5_FX_FULL;
+        }
+        ctx->fx.floor_q31 = floor_q31;
     }
-    if (floor_q31 > H5_FX_FULL) {
-        floor_q31 = H5_FX_FULL;
-    }
-    ctx->fx.floor_q31 = floor_q31;
 
-    ctx->fx.hold_samples = (uint32_t)(((int64_t)hold * (int64_t)rate) >> 16);
+    ctx->fx.hold_samples = (uint32_t)(((int64_t)
+        ctx->fx_params[H5_FX_GATE_HOLD] * (int64_t)rate) >> 16);
 
-    attack_samples = (uint32_t)(((int64_t)attack * (int64_t)rate) >> 16);
-    if (attack_samples == 0u) {
-        attack_samples = 1u;
-    }
-    ctx->fx.atk_delta = H5_FX_FULL / (int32_t)attack_samples;
+    {
+        uint32_t attack_samples = (uint32_t)(((int64_t)
+            ctx->fx_params[H5_FX_GATE_ATTACK] * (int64_t)rate) >> 16);
+        uint32_t release_samples = (uint32_t)(((int64_t)
+            ctx->fx_params[H5_FX_GATE_RELEASE] * (int64_t)rate) >> 16);
 
-    release_samples = (uint32_t)(((int64_t)release * (int64_t)rate) >> 16);
-    if (release_samples == 0u) {
-        release_samples = 1u;
+        if (attack_samples == 0u) {
+            attack_samples = 1u;
+        }
+        if (release_samples == 0u) {
+            release_samples = 1u;
+        }
+        ctx->fx.atk_delta = H5_FX_FULL / (int32_t)attack_samples;
+        ctx->fx.rel_delta = H5_FX_FULL / (int32_t)release_samples;
     }
-    ctx->fx.rel_delta = H5_FX_FULL / (int32_t)release_samples;
+#endif
 }
 
 void h5_fx_clear(struct h5_context_s *ctx)
@@ -263,13 +283,17 @@ void h5_fx_clear(struct h5_context_s *ctx)
             ctx->fx.allpass[ch][line].pos = 0u;
         }
     }
+#if H5_FX_NOISE_GATE
     ctx->fx.key_env = 0;
-    ctx->fx.out_env = 0;
     ctx->fx.gate_gain = 0;
     ctx->fx.hold_count = 0u;
     ctx->fx.state = H5_FX_GATE_CLOSED;
+#endif
+    ctx->fx.out_env = 0;
 }
 
+/* The reverb of one channel: the damped comb lines summed into the series
+ * allpass diffusers. */
 static int32_t h5_fx_reverb_channel(struct h5_context_s *ctx, int ch,
     int32_t in)
 {
@@ -281,8 +305,9 @@ static int32_t h5_fx_reverb_channel(struct h5_context_s *ctx, int ch,
 
     for (line = 0; line < H5_FX_COMBS; line++) {
         struct h5_comb_s *c = &fx->comb[ch][line];
+        uint32_t len = fx->comb_len[line];
         uint32_t wp = c->pos;
-        uint32_t rp = (wp >= c->len) ? wp - c->len : wp + c->alloc - c->len;
+        uint32_t rp = (wp >= len) ? wp - len : wp + c->alloc - len;
         int32_t y = (int32_t)c->line[rp] * 65536;
         int32_t fb;
         int64_t w;
@@ -311,7 +336,7 @@ static int32_t h5_fx_reverb_channel(struct h5_context_s *ctx, int ch,
 
         a->line[wp] = h5_clip_i32_to_i16(v >> 16);
         wp++;
-        if (wp >= a->len) {
+        if (wp >= fx->allpass_len[line]) {
             wp = 0u;
         }
         a->pos = wp;
@@ -334,86 +359,98 @@ void h5_fx_process(struct h5_context_s *ctx, int64_t in_l, int64_t in_r,
     int32_t side = h5_mul_q31(diff, fx->width_q31) >> 1;
     int32_t wl = h5_sat_i32(mid + (int64_t)side);
     int32_t wr = h5_sat_i32(mid - (int64_t)side);
-    int32_t key = h5_fx_mag(il);
-    int32_t key_r = h5_fx_mag(ir);
     int32_t level;
 
-    if (key_r > key) {
-        key = key_r;
-    }
+#if H5_FX_NOISE_GATE
+    {
+        int32_t key = h5_fx_mag(il);
+        int32_t key_r = h5_fx_mag(ir);
 
-    /* Instant-attack, linear-release peak follower on the bus input. */
-    if (key > fx->key_env) {
-        fx->key_env = key;
-    } else {
-        int64_t env = (int64_t)fx->key_env - (int64_t)fx->rel_delta;
-
-        fx->key_env = (env < 0) ? 0 : (int32_t)env;
-    }
-
-    if (fx->floor_q31 == H5_FX_FULL) {
-        /* RANGE = 0: the gate is bypassed entirely. */
-        fx->gate_gain = H5_FX_FULL;
-        fx->state = H5_FX_GATE_CLOSED;
-    } else {
-        switch (fx->state) {
-        case H5_FX_GATE_CLOSED:
-            fx->gate_gain = fx->floor_q31;
-            if (fx->key_env >= fx->thr_open_q31) {
-                fx->state = H5_FX_GATE_OPENING;
-            }
-            break;
-        case H5_FX_GATE_OPENING: {
-            int64_t gain = (int64_t)fx->gate_gain + fx->atk_delta;
-
-            if (gain >= H5_FX_FULL) {
-                gain = H5_FX_FULL;
-                fx->state = H5_FX_GATE_OPEN;
-            }
-            fx->gate_gain = (int32_t)gain;
-            break;
+        if (key_r > key) {
+            key = key_r;
         }
-        case H5_FX_GATE_OPEN:
-            if (fx->key_env < fx->thr_close_q31) {
-                fx->hold_count = fx->hold_samples;
-                fx->state = H5_FX_GATE_HOLDING;
-            }
-            break;
-        case H5_FX_GATE_HOLDING:
-            if (fx->hold_count > 0u) {
-                fx->hold_count--;
-            }
-            if (fx->key_env >= fx->thr_open_q31) {
-                fx->state = H5_FX_GATE_OPEN;
-            } else if (fx->hold_count == 0u) {
-                fx->state = H5_FX_GATE_RELEASING;
-            }
-            break;
-        case H5_FX_GATE_RELEASING: {
-            int64_t gain = (int64_t)fx->gate_gain - fx->rel_delta;
 
-            if (gain <= fx->floor_q31) {
-                gain = fx->floor_q31;
-                fx->state = H5_FX_GATE_CLOSED;
-            }
-            fx->gate_gain = (int32_t)gain;
-            break;
+        /* Instant-attack, linear-release peak follower on the bus input. */
+        if (key > fx->key_env) {
+            fx->key_env = key;
+        } else {
+            int64_t env = (int64_t)fx->key_env - (int64_t)fx->rel_delta;
+
+            fx->key_env = (env < 0) ? 0 : (int32_t)env;
         }
-        default:
+
+        if (fx->floor_q31 == H5_FX_FULL) {
+            /* RANGE = 0: the gate is bypassed entirely. */
+            fx->gate_gain = H5_FX_FULL;
             fx->state = H5_FX_GATE_CLOSED;
-            break;
+        } else {
+            switch (fx->state) {
+            case H5_FX_GATE_CLOSED:
+                fx->gate_gain = fx->floor_q31;
+                if (fx->key_env >= fx->thr_open_q31) {
+                    fx->state = H5_FX_GATE_OPENING;
+                }
+                break;
+            case H5_FX_GATE_OPENING: {
+                int64_t gain = (int64_t)fx->gate_gain + fx->atk_delta;
+
+                if (gain >= H5_FX_FULL) {
+                    gain = H5_FX_FULL;
+                    fx->state = H5_FX_GATE_OPEN;
+                }
+                fx->gate_gain = (int32_t)gain;
+                break;
+            }
+            case H5_FX_GATE_OPEN:
+                if (fx->key_env < fx->thr_close_q31) {
+                    fx->hold_count = fx->hold_samples;
+                    fx->state = H5_FX_GATE_HOLDING;
+                }
+                break;
+            case H5_FX_GATE_HOLDING:
+                if (fx->hold_count > 0u) {
+                    fx->hold_count--;
+                }
+                if (fx->key_env >= fx->thr_open_q31) {
+                    fx->state = H5_FX_GATE_OPEN;
+                } else if (fx->hold_count == 0u) {
+                    fx->state = H5_FX_GATE_RELEASING;
+                }
+                break;
+            case H5_FX_GATE_RELEASING: {
+                int64_t gain = (int64_t)fx->gate_gain - fx->rel_delta;
+
+                if (gain <= fx->floor_q31) {
+                    gain = fx->floor_q31;
+                    fx->state = H5_FX_GATE_CLOSED;
+                }
+                fx->gate_gain = (int32_t)gain;
+                break;
+            }
+            default:
+                fx->state = H5_FX_GATE_CLOSED;
+                break;
+            }
         }
     }
 
     wl = h5_mul_q31(wl, fx->gate_gain);
     wr = h5_mul_q31(wr, fx->gate_gain);
+#else
+    /* Without the gate the wet return passes through unchanged. */
+    fx->gate_gain = H5_FX_FULL;
+#endif
+
     wl = h5_mul_q31(wl, fx->wet_q31);
     wr = h5_mul_q31(wr, fx->wet_q31);
 
     level = h5_fx_mag(wl);
-    key_r = h5_fx_mag(wr);
-    if (key_r > level) {
-        level = key_r;
+    {
+        int32_t level_r = h5_fx_mag(wr);
+
+        if (level_r > level) {
+            level = level_r;
+        }
     }
     /* The bus is busy while its tail is still audible. The level is a
      * peak follower: it jumps to the newest peak at once and falls away
@@ -435,6 +472,58 @@ bool h5_fx_busy(const struct h5_context_s *ctx)
     return ctx->fx.out_env > H5_FX_BUSY_LEVEL;
 }
 
+#else /* !H5_FX_REVERB */
+
+/* Without the reverb the bus has no wet signal: the send parameter and the
+ * FX parameters are unsupported, so the bus never runs and holds no memory.
+ * These stubs keep the rest of the library free of conditionals. */
+
+void h5_fx_defaults(struct h5_context_s *ctx)
+{
+    (void)ctx;
+}
+
+int h5_fx_init(struct h5_context_s *ctx)
+{
+    (void)ctx;
+
+    return 0;
+}
+
+void h5_fx_free(struct h5_context_s *ctx)
+{
+    (void)ctx;
+}
+
+void h5_fx_configure(struct h5_context_s *ctx)
+{
+    (void)ctx;
+}
+
+void h5_fx_clear(struct h5_context_s *ctx)
+{
+    (void)ctx;
+}
+
+void h5_fx_process(struct h5_context_s *ctx, int64_t in_l, int64_t in_r,
+    int32_t *out_l, int32_t *out_r)
+{
+    (void)ctx;
+    (void)in_l;
+    (void)in_r;
+    *out_l = 0;
+    *out_r = 0;
+}
+
+bool h5_fx_busy(const struct h5_context_s *ctx)
+{
+    (void)ctx;
+
+    return false;
+}
+
+#endif /* H5_FX_REVERB */
+
 h5_status h5_set_fx_param(h5_context handle, h5_fx_param param, int32_t value)
 {
     struct h5_context_s *ctx = (struct h5_context_s *)handle;
@@ -450,6 +539,9 @@ h5_status h5_set_fx_param(h5_context handle, h5_fx_param param, int32_t value)
     }
 
     info = &h5_fx_param_table[param];
+    if (info->min == H5_PARAM_UNSUPPORTED) {
+        return H5_ERR_UNSUPPORTED;
+    }
     clamped = value;
     status = H5_OK;
     if (clamped < info->min) {
@@ -478,6 +570,9 @@ h5_status h5_get_fx_param(const h5_context handle, h5_fx_param param,
     }
     if ((unsigned)param >= (unsigned)H5_FX_PARAM_COUNT) {
         return H5_ERR_INVALID_PARAM;
+    }
+    if (h5_fx_param_table[param].min == H5_PARAM_UNSUPPORTED) {
+        return H5_ERR_UNSUPPORTED;
     }
 
     *out = ctx->fx_params[param];

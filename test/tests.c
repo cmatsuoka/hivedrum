@@ -1717,7 +1717,9 @@ static int metallic_bell_cymbal(h5_voice voice, h5_instrument instrument)
     return 0;
 }
 
-/* The Bend control sweeps the bank of the metallic voices. */
+#if H5_TEST_CYMBAL
+/* The Bend control sweeps the bank of the metallic voices. Only the Cymbal
+ * has one: the Hi-hat's Bend is fixed at zero. */
 static int metallic_bend(h5_voice voice, h5_instrument instrument)
 {
     h5_context ctx = h5_create_context(TEST_RATE);
@@ -1768,6 +1770,7 @@ static int metallic_bend(h5_voice voice, h5_instrument instrument)
     h5_destroy_context(ctx);
     return 0;
 }
+#endif /* H5_TEST_CYMBAL */
 
 /* One of a metallic voice's noise-filter edges changes the render and never
  * goes silent at either end of its range. */

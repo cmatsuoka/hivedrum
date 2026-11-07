@@ -1,5 +1,5 @@
 /*
- * dsp.c - fixed-point DSP layer checks for the Hive-V test harness.
+ * dsp.c - fixed-point DSP layer checks for the Libhive test harness.
  *
  * Command --dsp verifies the shared primitives against libm: sine
  * interpolation, the per-voice noise generator, the linear AR envelope,

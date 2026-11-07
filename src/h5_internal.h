@@ -350,6 +350,11 @@ struct h5_kick_s {
  * 48 kHz. */
 #define H5_CYMBAL_ATTACK_LEN 2880
 extern const int16_t h5_cymbal_attack[H5_CYMBAL_ATTACK_LEN];
+
+/* Length of the Cymbal's cleaned sustain loop, one entry per sample at
+ * 48 kHz. It is played forward/backward under the wash envelope. */
+#define H5_CYMBAL_LOOP_LEN 2400
+extern const int16_t h5_cymbal_loop[H5_CYMBAL_LOOP_LEN];
 #endif
 
 /* Tom voice runtime state. The engine keeps its own copies of the parameters
@@ -435,9 +440,10 @@ struct h5_metallic_s {
     uint8_t open;               /* the hit was triggered open */
 };
 
-/* Cymbal voice runtime state. The voice has a short sampled strike played
- * through a variable-rate phase accumulator, plus a synthesized noise wash
- * shaped by a fixed high-pass, a swept low-pass and a resonant tone band. */
+/* Cymbal voice runtime state. The voice has a short sampled strike and a
+ * cleaned sustain loop, both played through variable-rate phase
+ * accumulators, plus a synthesized noise wash shaped by a fixed high-pass,
+ * a swept low-pass and a resonant tone band. */
 struct h5_cymbal_s {
     struct h5_engine_s head;
     struct h5_noise_s noise;
@@ -448,6 +454,8 @@ struct h5_cymbal_s {
     struct h5_svf_s out_hp;      /* fixed output high-pass */
     int32_t attack_phase_q16;    /* strike table position, Q16 samples */
     int32_t attack_step_q16;     /* strike table step at Tone Pitch */
+    int32_t loop_phase_q16;      /* sustain loop position, Q16 samples */
+    int32_t loop_step_q16;       /* sustain loop step at Tone Pitch */
     int32_t attack_gain_q16;     /* Bell/Cymbal side of the attack */
     int32_t tail_gain_q16;       /* Bell/Cymbal side of the wash */
     int32_t noise_gain_q16;      /* Noise/Tone side of the wash */

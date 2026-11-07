@@ -20,7 +20,8 @@ after the library initialization.
 - Seven simultaneously playable voices built from five engine types (Kick,
   Snare, Tom, Cymbal and the metallic engine for the Hi-hat). The Hi-hat is
   one voice reachable through two instruments, closed and open.
-- The Cymbal pairs a short measured strike table with a swept noise wash;
+- The Cymbal pairs a short measured strike and a cleaned sustain loop with a
+  swept noise wash;
   the Hi-hat is built from a ten-oscillator triangle bank, a swept resonant
   low-pass and a saturation stage.
 - Per-instrument volume and pan.

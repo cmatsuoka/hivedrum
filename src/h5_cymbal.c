@@ -7,6 +7,9 @@
  *     variable-rate phase accumulator. The Tone Pitch sets the playback
  *     rate and Bend sweeps it over the wash envelope, so the strike takes
  *     the falling or rising character of the hardware.
+ *   - A cleaned sustain loop, derived from recorded audio data and replayed
+ *     forward/backward under the same envelope. The loop supplies the
+ *     metallic body; it is mixed with the noise before the wash filters.
  *   - A synthesized wash: the noise generator through a high-pass
  *     (Noise Body) and a swept low-pass (Noise and Sweep), plus a resonant
  *     band for the tonal part of the Noise/Tone balance. The wash has an
@@ -140,6 +143,7 @@ static void h5_cymbal_apply(void *engine,
         step = 1;
     }
     c->attack_step_q16 = (int32_t)step;
+    c->loop_step_q16 = (int32_t)step;
 
     /* The wash high-pass and the fixed output high-pass. */
     h5_svf_tune(&c->noise_hp, H5_SVF_HP, c->hp_freq_q16, H5_Q16_ONE,
@@ -207,6 +211,8 @@ void h5_cymbal_setup(void *engine, h5_voice voice,
     h5_svf_reset(&c->out_hp);
     c->attack_phase_q16 = 0;
     c->attack_step_q16 = 0;
+    c->loop_phase_q16 = 0;
+    c->loop_step_q16 = 0;
     c->attack_gain_q16 = 0;
     c->tail_gain_q16 = 0;
     c->noise_gain_q16 = 0;
@@ -245,6 +251,7 @@ void h5_cymbal_trigger(void *engine, int32_t level_q16,
 
     c->level_q16 = level_q16;
     c->attack_phase_q16 = 0;
+    c->loop_phase_q16 = 0;
     c->attack_active = (c->attack_gain_q16 != 0) ? 1u : 0u;
     c->env_slow = (c->tail_gain_q16 != 0) ? ((int32_t)1 << 30) : 0;
     c->env_fast = c->env_slow;
@@ -260,7 +267,7 @@ int32_t h5_cymbal_process(void *engine)
 {
     struct h5_cymbal_s *c = (struct h5_cymbal_s *)engine;
     int32_t env, env16, attack, u, hp, lp, bp, wash, mix;
-    int32_t step;
+    int32_t step, loop;
 
     if (!c->head.active) {
         return 0;
@@ -304,6 +311,37 @@ int32_t h5_cymbal_process(void *engine)
         }
     }
 
+    /* The sustain loop. It is played forward/backward, so the stored
+     * segment does not need a crossfade at its ends. */
+    loop = 0;
+    if (c->loop_step_q16 > 0) {
+        int32_t period_q16 = (2 * (H5_CYMBAL_LOOP_LEN - 1)) << 16;
+        int32_t half_q16 = (H5_CYMBAL_LOOP_LEN - 1) << 16;
+        int32_t idx;
+
+        step = c->loop_step_q16;
+        if (c->bend_q16 != 0) {
+            int32_t semitones = h5_mul_q16(c->bend_q16,
+                (int32_t)h5_shr_round((int64_t)c->env_slow, 14u));
+            int32_t ratio = h5_semitone_ratio_interp(semitones);
+
+            step = h5_scale_q16(step, ratio);
+        }
+        if (step < 1) {
+            step = 1;
+        }
+        c->loop_phase_q16 += step;
+        if (c->loop_phase_q16 >= period_q16) {
+            c->loop_phase_q16 %= period_q16;
+        }
+        if (c->loop_phase_q16 < half_q16) {
+            idx = c->loop_phase_q16 >> 16;
+        } else {
+            idx = (period_q16 - c->loop_phase_q16) >> 16;
+        }
+        loop = (int32_t)h5_cymbal_loop[idx] << 16;
+    }
+
     /* The wash. The filter cutoff follows the envelope when Sweep moves
      * it; otherwise the coefficients are already in place. */
     if (c->sweep_q16 != 0) {
@@ -327,6 +365,7 @@ int32_t h5_cymbal_process(void *engine)
      * exceeds one on a full-scale signal, and the half-scale loop keeps it
      * inside the Q31 range. The scale is restored after the filter chain. */
     u = h5_noise_next(&c->noise) >> 1;
+    u = h5_sat_add_q31(u, loop >> 1);
     hp = h5_svf_run(&c->noise_hp, u);
     lp = h5_svf_run(&c->noise_lp, hp);
     bp = h5_svf_run(&c->tone_bp, hp);

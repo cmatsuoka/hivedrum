@@ -212,14 +212,15 @@ filter-bend depth, so their noise sweeps close at slightly different rates.
 
 - **Strike and loop.** A synthesized strike: 22 damped inharmonic modes
   plus a short high-passed noise burst, played through variable-rate phase
-  accumulators. A cleaned 50 ms sustain loop, taken late in the recorded
-  sustain before the final decay where the loop tone is clearest, is played
-  forward/backward under the same envelope. Tone Pitch sets the playback
-  rates; Bend sweeps them over the wash envelope.
+  accumulators. A cleaned 50 ms sustain loop, taken from the sustain where
+  the loop tone is clearest and still above the recording's noise floor, is
+  played forward/backward under the same envelope. Tone Pitch sets the
+  playback rates; Bend sweeps them over the wash envelope.
 - **Wash.** Noise/Tone crossfades the broadband noise wash against the
-  sampled loop: 0 leaves only noise, 1 leaves only the loop. The mix passes
-  a two-pole high-pass (Noise Body) and a swept low-pass (Noise and Sweep),
-  then the wash envelope. The wash uses an exponential release, so its level
+  sampled loop: 0 leaves only noise, 1 leaves only the loop. The noise
+  passes a two-pole high-pass (Noise Body), the loop joins it, and the sum
+  passes a swept low-pass (Noise and Sweep), then the wash envelope. The
+  wash uses an exponential release, so its level
   falls by a nearly constant number of decibels per second through the tail.
 - **Mix.** Bell/Cymbal trades the synthesized strike against the wash.
 - **Output.** The mix passes a fixed high-pass, a +6 dB makeup gain and a

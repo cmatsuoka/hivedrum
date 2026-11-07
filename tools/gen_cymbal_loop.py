@@ -4,9 +4,13 @@
 The table is derived from a recorded cymbal hit: a sustain window after the
 attack has faded is flattened, its slow filter colour is optionally
 equalised, and a short segment is kept as a loop.  The default window is
-taken from the point where the loop tone is clearest: late in the sustain,
-before the final decay.  It is not the original stored waveform; it is a
-cleaned, plausible loop used as the engine's sampled metallic source.
+taken from the point where the loop tone is clearest and still well above
+the recording's noise floor.  A light whitening evens out the fixed colour of the
+recording, so the sampled body keeps a richer, less resonant spectrum.  A
+pair of peaking cuts trims the loop's body and presence so it blends with
+the noise wash; a sampled-data equaliser costs nothing at run time.  It is
+not the original stored waveform; it is a cleaned, plausible loop used as
+the engine's sampled metallic source.
 
 Usage: python3 tools/gen_cymbal_loop.py input.wav > src/h5_cymbal_loop.c
 """
@@ -16,9 +20,32 @@ import numpy as np
 
 RATE = 48000
 LENGTH = 2400
-START = 2.90
+START = 0.20
 SEGMENT = 0.30
-WHITEN = 0.0
+WHITEN = 0.4
+
+# The loop runs at Tone Pitch 0.55 by default, so these loop-domain
+# frequencies land near 800 Hz (body) and 2 kHz (presence) at playback.
+BODY_HZ = 1450.0
+BODY_DB = -4.0
+BODY_Q = 1.2
+PRESENCE_HZ = 3600.0
+PRESENCE_DB = -8.0
+PRESENCE_Q = 1.0
+
+
+def peaking_response(freqs, f0, gain_db, q):
+    """Magnitude of an RBJ peaking stage at the given frequencies."""
+    a = 10.0 ** (gain_db / 40.0)
+    w0 = 2.0 * np.pi * f0 / RATE
+    alpha = np.sin(w0) / (2.0 * q)
+    cosw0 = np.cos(w0)
+    b = np.array([1.0 + alpha * a, -2.0 * cosw0, 1.0 - alpha * a])
+    d = np.array([1.0 + alpha / a, -2.0 * cosw0, 1.0 - alpha / a])
+    z1 = np.exp(-1j * 2.0 * np.pi * freqs / RATE)
+    z2 = z1 * z1
+    h = (b[0] + b[1] * z1 + b[2] * z2) / (d[0] + d[1] * z1 + d[2] * z2)
+    return np.abs(h)
 
 
 def read(path):
@@ -70,10 +97,14 @@ def main(path):
     eq = np.clip(eq, 0.15, 8.0)
     seg = np.fft.irfft(spec * eq, nfft)[:n]
 
-    # Remove the remaining very low end.
+    # Remove the remaining very low end and trim the body/presence
+    # balance. The peaking magnitudes are zero-phase, so the loop keeps the
+    # attack-free segment's shape and needs no settling time.
     f = np.fft.rfftfreq(nfft, 1.0 / RATE)
     spec = np.fft.rfft(seg, nfft)
     spec[f < 100.0] = 0.0
+    spec *= peaking_response(f, BODY_HZ, BODY_DB, BODY_Q)
+    spec *= peaking_response(f, PRESENCE_HZ, PRESENCE_DB, PRESENCE_Q)
     seg = np.fft.irfft(spec, nfft)[:n]
 
     seg = seg[:LENGTH].copy()

@@ -10,12 +10,13 @@
  *     hardware.
  *   - A cleaned sustain loop, derived from recorded audio data and replayed
  *     forward/backward under the same envelope. The loop supplies the
- *     metallic body; it is mixed with the noise before the wash filters.
+ *     metallic body; it joins the noise after the wash high-pass, so the
+ *     sampled body keeps its low end.
  *   - A synthesized wash: Noise/Tone crossfades the noise generator against
- *     the sampled loop, then the mix passes a high-pass (Noise Body) and a
- *     swept low-pass (Noise and Sweep). The wash has an exponential release,
- *     so its level falls by a nearly constant number of decibels per second
- *     through the tail.
+ *     the sampled loop. The noise passes a high-pass (Noise Body), the loop
+ *     joins it, and the sum passes a swept low-pass (Noise and Sweep). The
+ *     wash has an exponential release, so its level falls by a nearly
+ *     constant number of decibels per second through the tail.
  *
  * The Bell/Cymbal balance trades the synthesized strike against the wash, and
  * Noise/Tone crossfades the noise wash against the sampled loop. The two
@@ -461,11 +462,13 @@ int32_t h5_cymbal_process(void *engine)
     /* The high-pass runs at half scale: the innovation of a fast high-pass
      * exceeds one on a full-scale signal, and the half-scale loop keeps it
      * inside the Q31 range. The scale is restored after the filter chain.
-     * Noise/Tone mixes the noise wash against the sampled loop. */
+     * The noise is high-passed; the sampled loop joins it afterwards, so
+     * the loop keeps its low end and only the shared low-pass colours it.
+     * Noise/Tone sets the two source gains. */
     u = h5_mul_q16(h5_noise_next(&c->noise), c->noise_gain_q16) >> 1;
-    u = h5_sat_add_q31(u,
-        h5_mul_q16(loop, c->tone_gain_q16) >> 1);
     hp = h5_svf_run(&c->noise_hp, u);
+    hp = h5_sat_add_q31(hp,
+        h5_mul_q16(loop, c->tone_gain_q16) >> 1);
     lp = h5_svf_run(&c->noise_lp, hp);
 
     wash = h5_mul_q16(lp, H5_CYMBAL_WASH_GAIN_Q16);

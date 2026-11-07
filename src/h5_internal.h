@@ -447,7 +447,8 @@ struct h5_metallic_s {
 /* Cymbal voice runtime state. The voice has a synthesized modal strike and
  * a cleaned sustain loop, both played through variable-rate phase
  * accumulators. Noise/Tone crossfades the noise wash against the loop; the
- * mix passes a fixed high-pass and a swept low-pass. */
+ * noise passes a fixed high-pass, the loop joins it, and the sum passes a
+ * swept low-pass. */
 struct h5_cymbal_s {
     struct h5_engine_s head;
     struct h5_noise_s noise;

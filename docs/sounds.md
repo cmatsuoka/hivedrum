@@ -54,7 +54,8 @@ balances the body, Click sets the beater transient, Bend sets the pitch drop
 and Noise Pitch sets the noise filter cutoff.
 
 ```
- Tone Pitch ─┐                                         Noise
+ Tone Pitch ─┐                                          Noise
+             │                                            │
  Bend ───────┴─▶( pitch bend )                            │
                        │                                  ▼
                        ▼                            [ 50 Hz HP ]
@@ -115,44 +116,45 @@ and the filter contour follows the rattle envelope.
  Bend ───────┴─▶( pitch bend )         │
                        │               ▼
                        ▼     [ 50/20k band limit ]
-    Drive ┄┄┄▶[ sine / triangle ]      ├─▶─────────[ 750 Hz BP ]───────────┐
-                       │               │                                   │
-                       │               ├─▶────────[ 1.0 kHz BP ]───────────┤
-                       │               │                                   │
-                       │               ├─▶────────[ 5.5 kHz BP ]───────────┤
-                       │               │                                   │
-                       │               ├─▶─────────[ 12 kHz BP ]───────────┤
-                       │               │                                   │
-                       │               └─▶─────────[ broadband ]───────────┤
-                       ▼                                                   │
-                [ drive − H3 ]                                             ▼
-                       │                                                 [ Σ ]
-                       ▼                                                   │
-                 [ shell VCA ]◀┄┄┄ env³, Noise Tone, Click                 ▼
-                       │                      Noise Pitch, sweep ┄┄┄▶[ swept LP ]
-                       │                                                   ├───────────────┐
-                       │                                                   ▼               ▼
-                       │                       Noise Tone, Click ┄┄┄▶[ rattle VCA ]  [ burst env¹⁰ ]
-                       │                                                   │               │
-                       │                                                   │               ▼
-                       │                                                   │ Click ┄┄┄▶[ click VCA ]
-                       │                                                   │               │
-                       └───────────────────────────────────────────────────┼───────────────┘
-                                                                           │
-                                                                           ▼
-                                                                         [ Σ ]
-                                                                           │
-                                                                           ▼
-                                                                        [ tanh ]
-                                                                           │
-                                                                           ▼
-                                                                        [ ×1.10 ]
-                                                                           │
-                                                                           ▼
-                                                                      [ HP 50 Hz ]
-                                                                           │
-                                                                           ▼
-                                                                          OUT
+    Drive ┄┄┄▶[ sine / triangle ]      ├─▶───────[ 750 Hz BP ]─────────┐
+                       │               │                               │
+                       │               ├─▶──────[ 1.0 kHz BP ]─────────┤
+                       │               │                               │
+                       │               ├─▶──────[ 5.5 kHz BP ]─────────┤
+                       │               │                               │
+                       │               ├─▶───────[ 12 kHz BP ]─────────┤
+                       │               │                               │
+                       │               └─▶───────[ broadband ]─────────┤
+                       ▼                                               │
+                [ drive − H3 ]                                         ▼
+                       │                                             [ Σ ]
+                       ▼                                               │
+                 [ shell VCA ]◀┄┄┄ env³, Noise Tone, Click             ▼
+                       │                   Noise Pitch, sweep ┄┄┄▶[ swept LP ]
+                       │                                               ├───────────────┐
+                       │                                               │               │
+                       │                                               ▼               ▼
+                       │                   Noise Tone, Click ┄┄┄▶[ rattle VCA ]  [ burst env¹⁰ ]
+                       │                                               │               │
+                       │                                               │               ▼
+                       │                                               │ Click ┄┄┄▶[ click VCA ]
+                       │                                               │               │
+                       └───────────────────────────────────────────────┼───────────────┘
+                                                                       │
+                                                                       ▼
+                                                                     [ Σ ]
+                                                                       │
+                                                                       ▼
+                                                                    [ tanh ]
+                                                                       │
+                                                                       ▼
+                                                                    [ ×1.10 ]
+                                                                       │
+                                                                       ▼
+                                                                  [ HP 50 Hz ]
+                                                                       │
+                                                                       ▼
+                                                                      OUT
 ```
 
 ## Toms 1-3
@@ -223,31 +225,44 @@ filter-bend depth, so their noise sweeps close at slightly different rates.
   wash uses an exponential release, so its level
   falls by a nearly constant number of decibels per second through the tail.
 - **Mix.** Bell/Cymbal trades the synthesized strike against the wash.
-- **Output.** The mix passes a fixed high-pass, a +6 dB makeup gain and a
+- **Output.** The mix passes a fixed high-pass, a +9.5 dB makeup gain and a
   soft clipper.
 
 ```
- Strike modes ─▶[ variable-rate read ]─▶[ strike VCA ]◀┄ Bell/Cymbal
-                                                                    │
- Loop table ──▶[ ping-pong read ]──┐                                      │
- Noise ────────────────────────────┴─▶[ Noise/Tone mix ]─▶[ 2-pole HP ]──┤
-                                                                ▲ Noise Body
-                                                                │           │
-                                                          [ swept LP ] ◀┄ Noise, Sweep
-                                                                │           │
-                                                          [ wash VCA ] ◀┄ Bell/Cymbal
-                                                                │           │
-                                                                ▼           ▼
-                                                              [ Σ ]
-                                                                │
-                                                                ▼
-                                                          [ HP 90 Hz ]
-                                                                │
-                                                                ▼
-                                                           [ soft clip ]
-                                                                │
-                                                                ▼
-                                                               OUT
+       Strike path                            Wash path
+       Strike modes                           Loop table
+            │                                     │
+            ▼                                     ▼
+    Variable-rate read                      Ping-pong read
+            │                                     │
+            ▼                                     ▼
+        Strike VCA ◀┄┄ Bell/Cymbal          Noise/Tone mix ◀┄┄ Noise
+            │                                     │
+            │                                     ▼
+            │                                 2-pole HP ◀┄┄ Noise Body
+            │                                     │
+            │                                     ▼
+            │                                  Swept LP ◀┄┄ Noise, Sweep
+            │                                     │
+            │                                     ▼
+            │                  Bell/Cymbal ┄┄▶ Wash VCA
+            │                                     │
+            └──────────────────┬──────────────────┘
+                               │
+                               ▼
+                             [ Σ ]
+                               │
+                               ▼
+                            HP 90 Hz
+                               │
+                               ▼
+                            +9.5 dB
+                               │
+                               ▼
+                           Soft clip
+                               │
+                               ▼
+                              OUT
 ```
 
 The strike modes carry the common transient of the instrument; the loop
@@ -265,11 +280,11 @@ per-register decay differences shaped by the Sweep contour.
   above its high-pass corner, which gives it its thin character.
 - **Output.** Metal and noise are balanced by Bell/Cymbal and Noise/Tone,
   scaled by the strike level, and blended through the dry/saturated Drive
-  stage.
+  stage. A fixed +2 dB makeup gain follows; an open hit adds another +2 dB.
 
 Open and closed hits share the engine. The open instrument lengthens the
-noise release by the Open amount; the metal envelope is the same for open
-and closed hits.
+noise release by 0.75 s; the metal envelope is the same for open and closed
+hits.
 
 ```
  Tone Pitch ───▶( bank scale )                                Noise
@@ -305,16 +320,16 @@ and closed hits.
                                             ▼
                                           [ Σ ]
                                             │
-                                            ├─────────▶[ dry 1−Drive ]───────┐
-                                            ▼                                │
-                                        [ tanh ]                             │
-                                            │                                │
-                                            ▼                                │
-                                         [ HP ]                              │
-                                            │                                │
-                                            ▼                                │
-                                       [ ×Drive ]────────────────────────────┤
-                                                                             │
-                                                                             ▼
-                                                                            OUT
+                                            ├──▶[ dry 1−Drive ]─┐
+                                            ▼                   │
+                                        [ tanh ]                │
+                                            │                   │
+                                            ▼                   │
+                                         [ HP ]                 │
+                                            │                   │
+                                            ▼                   │
+                                       [ ×Drive ]───────────────┤
+                                                                │
+                                                                ▼
+                                                               OUT
 ```

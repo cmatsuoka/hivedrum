@@ -74,7 +74,11 @@ static const int32_t h5_metallic_amp[H5_METALLIC_BANK] = {
 #define H5_METALLIC_HIHAT_METAL_DECAY_Q16 (8529) /* 0.13 */
 #define H5_METALLIC_HIHAT_METAL_GAIN_Q16 (3277) /* 0.05 */
 #define H5_METALLIC_HIHAT_NOISE_GAIN_Q16 (6554) /* 0.10 */
-#define H5_METALLIC_HIHAT_NOISE_OPEN_Q16 (45875) /* 0.70 */
+#define H5_METALLIC_HIHAT_NOISE_OPEN_Q16 (49152) /* 0.75 */
+
+/* The Hi-hat output gain, and the extra gain for an open hit. */
+#define H5_METALLIC_HIHAT_OUTPUT_GAIN_Q16 (82510) /* 1.26, +2 dB */
+#define H5_METALLIC_HIHAT_OPEN_GAIN_Q16 (82510) /* +2 dB more when open */
 
 /* The Hi-hat softens its balances on a soft hit. */
 #define H5_METALLIC_HIHAT_BELL_VEL_Q16 (6554)  /* 0.10 */
@@ -369,7 +373,12 @@ int32_t h5_metallic_process(void *engine)
     mix = h5_sat_add_q31(metal, noise);
 
     x = h5_mul_q16(mix, m->vel.level_q16);
-    return h5_sat_i32((int64_t)h5_metallic_shaper(m, x) << 2);
+    x = h5_sat_i32((int64_t)h5_metallic_shaper(m, x) << 2);
+    x = h5_mul_q16(x, H5_METALLIC_HIHAT_OUTPUT_GAIN_Q16);
+    if (m->open != 0u) {
+        x = h5_mul_q16(x, H5_METALLIC_HIHAT_OPEN_GAIN_Q16);
+    }
+    return x;
 }
 
 const struct h5_engine_ops h5_hihat_ops = {

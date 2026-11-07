@@ -56,7 +56,7 @@
 #define H5_CYMBAL_WASH_GAIN_Q16 (58982) /* 0.9 */
 #define H5_CYMBAL_NOISE_LEVEL_Q16 (26214) /* 0.4 */
 #define H5_CYMBAL_LOOP_LEVEL_Q16 (72090) /* 1.1 */
-#define H5_CYMBAL_OUTPUT_GAIN_Q16 (131072) /* 2.0, +6 dB */
+#define H5_CYMBAL_OUTPUT_GAIN_Q16 (196608) /* 3.0, +9.5 dB */
 
 /* The strike's noise burst and its level. */
 #define H5_CYMBAL_ATTACK_NOISE_TAU_Q16 262 /* 4 ms */

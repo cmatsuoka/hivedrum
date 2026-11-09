@@ -10,13 +10,13 @@
   <defs>
     <g id="hex" fill="none" class="logo-stroke" stroke-width="6" stroke-linejoin="miter">
       <path d="M 0,-79.5 L 68.849,-39.75 L 68.849,39.75 L 0,79.5 L -68.849,39.75 L -68.849,-39.75 Z"/>
-      <path d="M 0,-60 L 51.962,-30 L 51.962,30 L 0,60 L -51.962,30 L -51.962,-30 Z"/>
-      <path stroke-linecap="round" d="M 0,-39 L 0,-76"/>
-      <path stroke-linecap="round" d="M 33.775,-19.5 L 65.818,-38"/>
-      <path stroke-linecap="round" d="M 33.775,19.5 L 65.818,38"/>
-      <path stroke-linecap="round" d="M 0,39 L 0,76"/>
-      <path stroke-linecap="round" d="M -33.775,19.5 L -65.818,38"/>
-      <path stroke-linecap="round" d="M -33.775,-19.5 L -65.818,-38"/>
+      <path stroke-width="4.5" d="M 0,-60 L 51.962,-30 L 51.962,30 L 0,60 L -51.962,30 L -51.962,-30 Z"/>
+      <path stroke-width="4.5" stroke-linecap="round" d="M 0,-39 L 0,-76"/>
+      <path stroke-width="4.5" stroke-linecap="round" d="M 33.775,-19.5 L 65.818,-38"/>
+      <path stroke-width="4.5" stroke-linecap="round" d="M 33.775,19.5 L 65.818,38"/>
+      <path stroke-width="4.5" stroke-linecap="round" d="M 0,39 L 0,76"/>
+      <path stroke-width="4.5" stroke-linecap="round" d="M -33.775,19.5 L -65.818,38"/>
+      <path stroke-width="4.5" stroke-linecap="round" d="M -33.775,-19.5 L -65.818,-38"/>
       <circle cx="0" cy="0" r="5.5" class="logo-fill" stroke="none"/>
     </g>
   </defs>

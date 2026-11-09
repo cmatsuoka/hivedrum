@@ -1,6 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="467 142 473 337" width="473" height="337" role="img" aria-label="Hive-V hexagon mark">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="467 142 473 337" width="473" height="337" role="img" aria-label="Hivedrum hexagon mark">
+  <style>
+    :root { --hivedrum-ink: #3b3c3e; }
+    @media (prefers-color-scheme: dark) {
+      :root { --hivedrum-ink: #e6e7e9; }
+    }
+    .logo-stroke { stroke: var(--hivedrum-ink); }
+    .logo-fill { fill: var(--hivedrum-ink); }
+  </style>
   <defs>
-    <g id="hex" fill="none" stroke="#3b3c3e" stroke-width="7" stroke-linejoin="miter">
+    <g id="hex" fill="none" class="logo-stroke" stroke-width="6" stroke-linejoin="miter">
       <path d="M 0,-79.5 L 68.849,-39.75 L 68.849,39.75 L 0,79.5 L -68.849,39.75 L -68.849,-39.75 Z"/>
       <path d="M 0,-60 L 51.962,-30 L 51.962,30 L 0,60 L -51.962,30 L -51.962,-30 Z"/>
       <path stroke-linecap="round" d="M 0,-39 L 0,-76"/>
@@ -9,7 +17,7 @@
       <path stroke-linecap="round" d="M 0,39 L 0,76"/>
       <path stroke-linecap="round" d="M -33.775,19.5 L -65.818,38"/>
       <path stroke-linecap="round" d="M -33.775,-19.5 L -65.818,-38"/>
-      <circle cx="0" cy="0" r="5.5" fill="#3b3c3e" stroke="none"/>
+      <circle cx="0" cy="0" r="5.5" class="logo-fill" stroke="none"/>
     </g>
   </defs>
   <use href="#hex" x="550" y="237"/>

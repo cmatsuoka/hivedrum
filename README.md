@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="hivedrum-logo-dark.svg">
-    <img src="hivedrum-logo.svg" alt="Hivedrum logo" width="280">
-  </picture>
+  <img src="hivedrum-logo.svg" alt="Hivedrum logo" width="280">
 </p>
 
 # Hivedrum

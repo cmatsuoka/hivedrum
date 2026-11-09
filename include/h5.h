@@ -1,7 +1,7 @@
 /*
- * h5.h - public API of the Libhive library.
+ * h5.h - public API of the Hivedrum library.
  *
- * Libhive is a seven-voice percussion synthesizer arranged as a drum kit:
+ * Hivedrum is a seven-voice percussion synthesizer arranged as a drum kit:
  * Kick, Snare, Tom 1, Tom 2, Tom 3, Cymbal and Hi-hat. The library renders a
  * single stereo mix into a caller-supplied buffer. It has no I/O and no
  * floating point. A context is created with h5_create_context().
@@ -10,8 +10,8 @@
  * The context is an opaque handle (h5_context).
  */
 
-#ifndef LIBHIVE_H5_H
-#define LIBHIVE_H5_H
+#ifndef HIVEDRUM_H5_H
+#define HIVEDRUM_H5_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -24,7 +24,7 @@ extern "C" {
 /* Library version. major/minor/patch are packed as 0x00MMmmpp.
  * The plain integer constants keep H5_VERSION_NUMBER usable in #if. */
 #define H5_VERSION_MAJOR 0
-#define H5_VERSION_MINOR 8
+#define H5_VERSION_MINOR 9
 #define H5_VERSION_PATCH 0
 #define H5_VERSION_NUMBER \
     ((H5_VERSION_MAJOR << 16) | (H5_VERSION_MINOR << 8) | H5_VERSION_PATCH)
@@ -78,7 +78,7 @@ typedef enum {
 } h5_instrument;
 
 /* The metallic voices are optional engines. The Hi-hat is compiled in behind
- * LIBHIVE_ENGINE_HIHAT and the Cymbal behind LIBHIVE_ENGINE_CYMBAL; both are
+ * HIVEDRUM_H5_ENGINE_HIHAT and the Cymbal behind HIVEDRUM_H5_ENGINE_CYMBAL; both are
  * defined by default. A voice whose engine is not compiled in stays in this
  * API, but it renders silence and supports no parameter:
  * h5_param_supported() reports false for it and the setters and getters
@@ -322,4 +322,4 @@ h5_status h5_trigger_velocity(h5_context ctx, h5_instrument instrument,
 } /* extern "C" */
 #endif
 
-#endif /* LIBHIVE_H5_H */
+#endif /* HIVEDRUM_H5_H */

@@ -1,5 +1,5 @@
 /*
- * h5_tables.c - flash-resident tables for the Libhive library.
+ * h5_tables.c - flash-resident tables for the Hivedrum library.
  *
  * The sine table stores only the first quadrant, as a file-scope `const`
  * array in flash. The full period is rebuilt once, on the first

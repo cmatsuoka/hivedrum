@@ -23,7 +23,7 @@
  * parts share the strike level and leave through a fixed high-pass and a soft
  * clipper.
  *
- * The engine is gated behind LIBHIVE_ENGINE_CYMBAL. When it is undefined
+ * The engine is gated behind HIVEDRUM_H5_ENGINE_CYMBAL. When it is undefined
  * the voice and instrument stay in the public API but render silence and
  * accept no parameters.
  */
@@ -32,7 +32,7 @@
 
 #include "h5_internal.h"
 
-#if defined(LIBHIVE_ENGINE_CYMBAL)
+#if defined(HIVEDRUM_H5_ENGINE_CYMBAL)
 
 /* The sampled loop's own rate. */
 #define H5_CYMBAL_TABLE_RATE 48000
@@ -76,7 +76,7 @@ static int32_t h5_cymbal_mul_q30(int32_t a, int32_t b)
 /* exp(-1/t) in Q30 for t >= 2 samples per e-fold, by the short series.
  *
  * The series is truncated after the quadratic term unless
- * LIBHIVE_XTRA_PRECISION is defined. The cubic term moves the rendered
+ * HIVEDRUM_XTRA_PRECISION is defined. The cubic term moves the rendered
  * Cymbal by -104.4 dB RMS (one least significant bit on 22 of 819,200
  * samples, none above it) and the mixed render by -109.5 dB RMS: far below
  * the noise floor of the render. The smallest time constant the engine
@@ -92,7 +92,7 @@ static int32_t h5_cymbal_exp_q30(int32_t t)
     x = ((int64_t)1 << 30) / t;
     x2 = (x * x) >> 30;
     c = ((int64_t)1 << 30) - x + x2 / 2;
-#ifdef LIBHIVE_XTRA_PRECISION
+#ifdef HIVEDRUM_XTRA_PRECISION
     c -= (((x2 * x) >> 30) / 6);
 #endif
     if (c < 0) {
@@ -503,4 +503,4 @@ const struct h5_engine_ops h5_cymbal_ops = {
     h5_cymbal_stub_trigger, h5_cymbal_stub_process
 };
 
-#endif /* LIBHIVE_ENGINE_CYMBAL */
+#endif /* HIVEDRUM_H5_ENGINE_CYMBAL */

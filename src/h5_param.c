@@ -115,7 +115,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
      * Decay, Noise/Tone, Bell/Cymbal and Noise Body; its
      * Bend and Sweep are fixed at zero and its Tone Pitch scales the
      * metallic bank. Defaults follow the shipped preset. */
-#ifdef LIBHIVE_ENGINE_CYMBAL
+#ifdef HIVEDRUM_H5_ENGINE_CYMBAL
     [H5_VOICE_CYMBAL] = {
         [H5_PARAM_NOISE_PITCH] = { I(2000), I(14000), I(12000) },
         [H5_PARAM_TONE_PITCH]  = { 0,      Q,        Q },
@@ -150,7 +150,7 @@ const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT] = {
         [H5_PARAM_FX_SEND]     = FXSEND,
     },
 #endif
-#ifdef LIBHIVE_ENGINE_HIHAT
+#ifdef HIVEDRUM_H5_ENGINE_HIHAT
     [H5_VOICE_HIHAT] = {
         [H5_PARAM_NOISE_PITCH] = { I(2000), I(14000), I(12000) },
         [H5_PARAM_TONE_PITCH]  = { 0,      Q,        Q },

@@ -1,5 +1,5 @@
 /*
- * main.c - test harness for the Libhive library.
+ * main.c - test harness for the Hivedrum library.
  *
  * Commands:
  *   --init              report the context size and the default sample rate
@@ -66,8 +66,8 @@ static struct h5_context_s *context_new(uint32_t sample_rate)
 
 /* The metallic voices are optional engines: a voice whose engine is not
  * compiled in supports no parameter at all, so its faceplate is not
- * checked. The Cymbal is behind LIBHIVE_ENGINE_CYMBAL and the Hi-hat behind
- * LIBHIVE_ENGINE_HIHAT. */
+ * checked. The Cymbal is behind HIVEDRUM_H5_ENGINE_CYMBAL and the Hi-hat behind
+ * HIVEDRUM_H5_ENGINE_HIHAT. */
 static int metallic_voice_present(h5_voice voice)
 {
     return (voice == H5_VOICE_CYMBAL) ? H5_TEST_CYMBAL : H5_TEST_HIHAT;

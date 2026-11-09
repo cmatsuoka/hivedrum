@@ -10,8 +10,8 @@
 #include "h5_internal.h"
 #include "tests.h"
 
-/* The FX bus is optional: the reverb behind LIBHIVE_FX_REVERB and the
- * noise gate behind LIBHIVE_FX_NOISE_GATE. The Makefile passes the same
+/* The FX bus is optional: the reverb behind HIVEDRUM_FX_REVERB and the
+ * noise gate behind HIVEDRUM_FX_NOISE_GATE. The Makefile passes the same
  * definitions to the library and to the harness, so a trimmed build skips
  * the stages it cannot run instead of failing them. */
 #if !H5_TEST_FX_REVERB

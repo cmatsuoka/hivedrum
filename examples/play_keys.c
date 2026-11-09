@@ -1,5 +1,5 @@
 /*
- * play_keys.c - play the Libhive kit from the keyboard through OpenAL.
+ * play_keys.c - play the Hivedrum kit from the keyboard through OpenAL.
  *
  * Keys:
  *   S - Kick
@@ -189,7 +189,7 @@ int main(void)
     int quit = 0;
     int status = EXIT_FAILURE;
 
-    printf("Libhive keyboard drums\n");
+    printf("Hivedrum keyboard drums\n");
     printf("  S kick   D snare   O tom 1   I tom 2   U tom 3\n");
     printf("  Q or Esc to quit\n\n");
     fflush(stdout);
@@ -225,7 +225,7 @@ int main(void)
 
     kit = h5_create_context(sample_rate);
     if (kit == 0) {
-        fprintf(stderr, "Could not create the Libhive context.\n");
+        fprintf(stderr, "Could not create the Hivedrum context.\n");
         goto cleanup;
     }
 

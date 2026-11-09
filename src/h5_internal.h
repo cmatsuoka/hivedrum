@@ -5,8 +5,8 @@
  * that the public header deliberately hides.
  */
 
-#ifndef LIBHIVE_H5_INTERNAL_H
-#define LIBHIVE_H5_INTERNAL_H
+#ifndef HIVEDRUM_H5_INTERNAL_H
+#define HIVEDRUM_H5_INTERNAL_H
 
 #include "h5.h"
 #include "h5_fixed.h"
@@ -71,25 +71,25 @@ extern const struct h5_param_info h5_param_table[H5_VOICE_COUNT][H5_PARAM_COUNT]
 
 /* The FX bus features.
  *
- * LIBHIVE_FX_REVERB compiles the stereo reverb: the comb and allpass
+ * HIVEDRUM_FX_REVERB compiles the stereo reverb: the comb and allpass
  * delay lines, the wet return and the delay block they live in. Without
  * it the bus has no wet signal, so the send parameter is unsupported and
  * the bus renders silence.
  *
- * LIBHIVE_FX_NOISE_GATE compiles the gate that shapes the reverb's
+ * HIVEDRUM_FX_NOISE_GATE compiles the gate that shapes the reverb's
  * return. The gate acts on the reverb's return, so it needs the reverb
  * and cannot be built without it. */
-#if defined(LIBHIVE_FX_REVERB)
+#if defined(HIVEDRUM_FX_REVERB)
 #define H5_FX_REVERB 1
 #else
 #define H5_FX_REVERB 0
 #endif
 
-#if defined(LIBHIVE_FX_NOISE_GATE) && !H5_FX_REVERB
-#error "LIBHIVE_FX_NOISE_GATE requires LIBHIVE_FX_REVERB"
+#if defined(HIVEDRUM_FX_NOISE_GATE) && !H5_FX_REVERB
+#error "HIVEDRUM_FX_NOISE_GATE requires HIVEDRUM_FX_REVERB"
 #endif
 
-#if defined(LIBHIVE_FX_NOISE_GATE)
+#if defined(HIVEDRUM_FX_NOISE_GATE)
 #define H5_FX_NOISE_GATE 1
 #else
 #define H5_FX_NOISE_GATE 0
@@ -386,7 +386,7 @@ struct h5_kick_s {
  * always defined. */
 #define H5_CYMBAL_ATTACK_MODES 22
 
-#if defined(LIBHIVE_ENGINE_CYMBAL)
+#if defined(HIVEDRUM_H5_ENGINE_CYMBAL)
 /* Length of the Cymbal's synthesized strike, in output samples at 48 kHz. */
 #define H5_CYMBAL_ATTACK_LEN 2880
 
@@ -769,4 +769,4 @@ bool h5_fx_busy(const struct h5_context_s *ctx);
  * and saturation. This is the single conversion in the output stage. */
 int16_t h5_mix_to_q15(int64_t sum);
 
-#endif /* LIBHIVE_H5_INTERNAL_H */
+#endif /* HIVEDRUM_H5_INTERNAL_H */

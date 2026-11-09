@@ -1,35 +1,35 @@
-# Makefile for the Libhive library (h5).
+# Makefile for the Hivedrum library (h5).
 #
 # Targets:
-#   all     build libhive.a
+#   all     build libhivedrum.a
 #   check   build and run the test harness
 #   example build the OpenAL keys player
 #   clean   remove the build products
 #
 # Options:
 #   The Hi-hat and Cymbal engines are compiled in by default, gated
-#   behind LIBHIVE_ENGINE_HIHAT and LIBHIVE_ENGINE_CYMBAL (both passed via
+#   behind HIVEDRUM_H5_ENGINE_HIHAT and HIVEDRUM_H5_ENGINE_CYMBAL (both passed via
 #   -D in ENGINE_DEFS below). Override ENGINE_DEFS to trim the build:
-#   `make ENGINE_DEFS=-DLIBHIVE_ENGINE_HIHAT` builds without the Cymbal,
+#   `make ENGINE_DEFS=-DHIVEDRUM_H5_ENGINE_HIHAT` builds without the Cymbal,
 #   `make ENGINE_DEFS=` builds neither; the disabled voices stay in the
 #   API but render silence and accept no parameters. The same definitions
 #   are passed to the test harness, which then skips the stages of the
 #   engines that are not compiled in.
 #
 #   The FX bus is compiled in by default as well, gated behind
-#   LIBHIVE_FX_REVERB and LIBHIVE_FX_NOISE_GATE (both passed via -D in
+#   HIVEDRUM_FX_REVERB and HIVEDRUM_FX_NOISE_GATE (both passed via -D in
 #   FX_DEFS below). Override FX_DEFS to trim the build:
-#   `make FX_DEFS=-DLIBHIVE_FX_REVERB` builds the reverb without the noise
+#   `make FX_DEFS=-DHIVEDRUM_FX_REVERB` builds the reverb without the noise
 #   gate, `make FX_DEFS=` builds no FX bus at all. Without the reverb the
 #   bus has no wet signal, so the send parameter and the FX parameters
 #   report themselves unsupported and the bus renders silence; the gate
 #   shapes the reverb's return and needs the reverb. The same definitions
 #   are passed to the test harness, which then skips the FX stages.
 #
-#   LIBHIVE_XTRA_PRECISION keeps the stages that only refine the sound below
+#   HIVEDRUM_XTRA_PRECISION keeps the stages that only refine the sound below
 #   the audible level (the Snare's second drive harmonic and the Cymbal's
 #   cubic term in the decay series). It is never defined by the Makefile;
-#   add -DLIBHIVE_XTRA_PRECISION to CFLAGS by hand to enable it.
+#   add -DHIVEDRUM_XTRA_PRECISION to CFLAGS by hand to enable it.
 
 CC      ?= cc
 AR      ?= ar
@@ -38,11 +38,11 @@ OPT     ?= -Os
 HOT_OPT ?= -O2
 
 BUILD   ?= build
-LIB     ?= libhive.a
+LIB     ?= libhivedrum.a
 TEST    ?= h5_test
 
-ENGINE_DEFS := -DLIBHIVE_ENGINE_HIHAT -DLIBHIVE_ENGINE_CYMBAL
-FX_DEFS     := -DLIBHIVE_FX_REVERB -DLIBHIVE_FX_NOISE_GATE
+ENGINE_DEFS := -DHIVEDRUM_H5_ENGINE_HIHAT -DHIVEDRUM_H5_ENGINE_CYMBAL
+FX_DEFS     := -DHIVEDRUM_FX_REVERB -DHIVEDRUM_FX_NOISE_GATE
 
 CSTD     := -std=c99
 WARN     := -Wall -Wextra -Werror
@@ -154,6 +154,6 @@ check-default: $(TEST) $(EXAMPLE_OBJS)
 	./$(TEST) --fx
 
 clean:
-	rm -rf $(BUILD) build-xtra $(LIB) $(TEST) libhive-xtra.a h5_test-xtra
+	rm -rf $(BUILD) build-xtra $(LIB) $(TEST) libhivedrum-xtra.a h5_test-xtra
 
 -include $(LIB_OBJS:.o=.d) $(TEST_OBJS:.o=.d) $(EXAMPLE_OBJS:.o=.d)

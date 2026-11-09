@@ -26,7 +26,7 @@
  * the Decay plus the Open amount of the Hi-hat. The drive stage is a dry
  * path and a saturated path in parallel.
  *
- * The engine is gated behind LIBHIVE_ENGINE_HIHAT. When it is undefined
+ * The engine is gated behind HIVEDRUM_H5_ENGINE_HIHAT. When it is undefined
  * the voice and instruments stay in the public API but render silence and
  * accept no parameters.
  */
@@ -34,7 +34,7 @@
 #include <string.h>
 
 #include "h5_internal.h"
-#if defined(LIBHIVE_ENGINE_HIHAT)
+#if defined(HIVEDRUM_H5_ENGINE_HIHAT)
 
 /* The bank frequencies, Hz. */
 static const int32_t h5_metallic_bank[H5_METALLIC_BANK] = {
@@ -410,4 +410,4 @@ const struct h5_engine_ops h5_hihat_ops = {
     h5_hihat_stub_trigger, h5_hihat_stub_process
 };
 
-#endif /* LIBHIVE_ENGINE_HIHAT */
+#endif /* HIVEDRUM_H5_ENGINE_HIHAT */

@@ -1,5 +1,5 @@
 /*
- * h5.c - Libhive context lifecycle, trigger/mixer API and render entry point.
+ * h5.c - Hivedrum context lifecycle, trigger/mixer API and render entry point.
  *
  * This file provides the context lifecycle, the instrument-level wrappers and
  * the render entry point.

@@ -31,8 +31,8 @@ static void ok(const char *what)
 }
 
 /* The metallic instruments exist only when their engine is compiled in: the
- * Cymbal behind LIBHIVE_ENGINE_CYMBAL and the Hi-hat behind
- * LIBHIVE_ENGINE_HIHAT. A trimmed build keeps the instruments in the API
+ * Cymbal behind HIVEDRUM_H5_ENGINE_CYMBAL and the Hi-hat behind
+ * HIVEDRUM_H5_ENGINE_HIHAT. A trimmed build keeps the instruments in the API
  * but they render silence, so the checks skip them. */
 static int instrument_available(h5_instrument instrument)
 {

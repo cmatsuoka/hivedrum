@@ -1,5 +1,5 @@
 /*
- * h5_fixed.h - inline fixed-point helpers for the Libhive library.
+ * h5_fixed.h - inline fixed-point helpers for the Hivedrum library.
  *
  * All helpers are integer-only. Rounding is round-half-up: exact halves
  * round toward positive infinity, the same convention the table generators
@@ -7,8 +7,8 @@
  * bounds; the helpers trust their inputs like the rest of the audio path.
  */
 
-#ifndef LIBHIVE_H5_FIXED_H
-#define LIBHIVE_H5_FIXED_H
+#ifndef HIVEDRUM_H5_FIXED_H
+#define HIVEDRUM_H5_FIXED_H
 
 #include <stdint.h>
 
@@ -146,4 +146,4 @@ static inline int32_t h5_cube_q30(int32_t v)
     return (int32_t)h5_shr_round(sq * (int64_t)v, 30u);
 }
 
-#endif /* LIBHIVE_H5_FIXED_H */
+#endif /* HIVEDRUM_H5_FIXED_H */

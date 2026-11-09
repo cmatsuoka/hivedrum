@@ -8,8 +8,8 @@
  * line lengths follow the sample rate and the room size, so the bus never
  * allocates after context creation.
  *
- * The two effects are optional. LIBHIVE_FX_REVERB compiles the reverb and
- * the delay memory it works on; LIBHIVE_FX_NOISE_GATE compiles the gate
+ * The two effects are optional. HIVEDRUM_FX_REVERB compiles the reverb and
+ * the delay memory it works on; HIVEDRUM_FX_NOISE_GATE compiles the gate
  * that shapes the reverb's return. The gate acts on the reverb's return, so
  * it needs the reverb and cannot be built without it. Without the reverb the
  * bus has no wet signal at all, so the send parameter and the FX parameters

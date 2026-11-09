@@ -1,15 +1,15 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="hive-logo-dark.svg">
-    <img src="hive-logo.svg" alt="Libhive logo" width="280">
+    <source media="(prefers-color-scheme: dark)" srcset="hivedrum-logo-dark.svg">
+    <img src="hivedrum-logo.svg" alt="Hivedrum logo" width="280">
   </picture>
 </p>
 
-# Libhive
+# Hivedrum
 
-*Libhive is under development and the API is currently unstable.*
+_libhivedrum is under development and the API is currently unstable._
 
-Libhive is a small, dependency-free C library that synthesizes a
+Hivedrum is a small, dependency-free C library that synthesizes a
 percussion kit inspired by analog electronic drums from the 80s. It
 renders a stereo mix into a caller-supplied buffer and performs no I/O.
 All DSP is integer fixed-point, with no memory allocation performed
@@ -34,7 +34,7 @@ after the library initialization.
 ## Building
 
 ```sh
-make          # builds libhive.a
+make          # builds libhivedrum.a
 make check    # builds and runs the test harness (writes WAV files to build/)
 ```
 
@@ -52,13 +52,13 @@ size; everything else stays at `-Os`.
 ## Build options
 
 The Cymbal and the Hi-hat are optional and gated by preprocessor macros.
-Undefine `LIBHIVE_ENGINE_HIHAT` or `LIBHIVE_ENGINE_CYMBAL` to remove each
+Undefine `HIVEDRUM_H5_ENGINE_HIHAT` or `HIVEDRUM_H5_ENGINE_CYMBAL` to remove each
 engine. A disabled voice stays in the public API but renders silence and
 accepts no parameters. The same definitions are passed to the test harness,
 which skips the stages of the engines that are not compiled in.
 
-The effects bus is optional too. `LIBHIVE_FX_REVERB` compiles the reverb and
-the delay memory it works on; `LIBHIVE_FX_NOISE_GATE` compiles the gate that
+The effects bus is optional too. `HIVEDRUM_FX_REVERB` compiles the reverb and
+the delay memory it works on; `HIVEDRUM_FX_NOISE_GATE` compiles the gate that
 shapes the reverb's return. The gate acts on that return, so it needs the
 reverb and cannot be built without it. Without the reverb the bus has no wet
 signal, so the send parameter and the FX parameters report themselves
@@ -67,19 +67,19 @@ unsupported and the bus renders silence.
 Both knobs are set in the Makefile and can be overridden on the command line:
 
 ```sh
-make                                   # the default: every engine and effect
-make ENGINE_DEFS=-DLIBHIVE_ENGINE_HIHAT   # no Cymbal
-make ENGINE_DEFS=                    # no Cymbal, no Hi-hat
-make FX_DEFS=-DLIBHIVE_FX_REVERB      # reverb without the noise gate
-make FX_DEFS=                         # no effects bus at all
+make                                         # the default: every engine and effect
+make ENGINE_DEFS=-DHIVEDRUM_H5_ENGINE_HIHAT  # no Cymbal
+make ENGINE_DEFS=                            # no Cymbal, no Hi-hat
+make FX_DEFS=-DHIVEDRUM_FX_REVERB            # reverb without the noise gate
+make FX_DEFS=                                # no effects bus at all
 ```
 
 The same definitions reach the test harness, which then skips the FX stages.
 
-`LIBHIVE_XTRA_PRECISION` keeps the stages that only refine the sound below
+`HIVEDRUM_XTRA_PRECISION` keeps the stages that only refine the sound below
 the audible level: the Snare's second drive harmonic and the Cymbal's cubic
 term in the decay series. The Makefile never defines it; add
-`-DLIBHIVE_XTRA_PRECISION` to `CFLAGS` by hand to enable it.
+`-DHIVEDRUM_XTRA_PRECISION` to `CFLAGS` by hand to enable it.
 
 ## Usage
 
@@ -209,7 +209,7 @@ noise: the Bell/Cymbal value drops slightly and the Noise/Tone value drops more.
 
 ## Tests
 
-`make check` runs the harness against `libhive.a`. The stages cover
+`make check` runs the harness against `libhivedrum.a`. The stages cover
 initialization, sine and DSP primitives, silence, the public API,
 per-engine sound checks for Kick, Tom, Snare, Hi-hat and Cymbal, and the
 mixer and output stage. It also renders `build/silence.wav`,

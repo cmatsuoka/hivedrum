@@ -25,7 +25,7 @@ extern "C" {
  * The plain integer constants keep H5_VERSION_NUMBER usable in #if. */
 #define H5_VERSION_MAJOR 0
 #define H5_VERSION_MINOR 9
-#define H5_VERSION_PATCH 0
+#define H5_VERSION_PATCH 1
 #define H5_VERSION_NUMBER \
     ((H5_VERSION_MAJOR << 16) | (H5_VERSION_MINOR << 8) | H5_VERSION_PATCH)
 

@@ -262,6 +262,9 @@ static int test_wet_level(void)
 /* -40 dBFS in Q15 LSB. */
 #define FX_MINUS_40_DBFS 328
 
+/* Q31 unity gain. */
+#define FX_GATE_UNITY ((int32_t)0x7FFFFFFF)
+
 #if H5_TEST_FX_GATE
 
 static void setup_gate(struct h5_context_s *ctx, int32_t range)
@@ -358,6 +361,63 @@ static int test_gate(void)
 
     free(gated);
     free(open);
+    h5_destroy_context((h5_context)ctx);
+    return failures;
+}
+
+/* A hit that lands while the gate is releasing must re-arm it. Otherwise the
+ * release ramp keeps pulling the gain down and the new hit is attenuated for
+ * the rest of the ramp. */
+static int test_gate_retrigger(void)
+{
+    struct h5_context_s *ctx = fx_new(FX_RATE);
+    size_t burst = (size_t)FX_RATE / 4u;
+    size_t i;
+    int seen_release = 0;
+
+    setup_gate(ctx, H5_Q16_ONE);
+
+    for (i = 0u; i < FX_FRAMES; i++) {
+        int64_t in = 0;
+        int32_t l;
+        int32_t r;
+
+        if (i < burst) {
+            in = ((i / 220u) % 2u) ? 0x20000000 : -0x20000000;
+        }
+        h5_fx_process(ctx, in, in, &l, &r);
+
+        if (ctx->fx.state == H5_FX_GATE_RELEASING) {
+            seen_release = 1;
+            break;
+        }
+    }
+
+    if (!seen_release) {
+        fail("the gate never entered its release ramp");
+    } else {
+        size_t window = (size_t)FX_RATE / 500u;
+        int reopened = 0;
+
+        for (i = 0u; i < window; i++) {
+            int64_t in = ((i / 220u) % 2u) ? 0x20000000 : -0x20000000;
+            int32_t l;
+            int32_t r;
+
+            h5_fx_process(ctx, in, in, &l, &r);
+            if (ctx->fx.gate_gain == FX_GATE_UNITY) {
+                reopened = 1;
+                break;
+            }
+        }
+
+        if (!reopened) {
+            fail("a hit during release does not reopen the gate");
+        } else {
+            ok("a hit during release reopens the gate");
+        }
+    }
+
     h5_destroy_context((h5_context)ctx);
     return failures;
 }
@@ -487,6 +547,7 @@ int command_fx(void)
     test_wet_level();
 #if H5_TEST_FX_GATE
     test_gate();
+    test_gate_retrigger();
 #else
     printf("skip: the noise gate is not compiled in\n");
 #endif

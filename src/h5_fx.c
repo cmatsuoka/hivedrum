@@ -418,7 +418,13 @@ void h5_fx_process(struct h5_context_s *ctx, int64_t in_l, int64_t in_r,
                 }
                 break;
             case H5_FX_GATE_RELEASING: {
-                int64_t gain = (int64_t)fx->gate_gain - fx->rel_delta;
+                int64_t gain;
+
+                if (fx->key_env >= fx->thr_open_q31) {
+                    fx->state = H5_FX_GATE_OPENING;
+                    break;
+                }
+                gain = (int64_t)fx->gate_gain - fx->rel_delta;
 
                 if (gain <= fx->floor_q31) {
                     gain = fx->floor_q31;

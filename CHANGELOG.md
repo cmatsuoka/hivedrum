@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.1 (2026-11-09)
+
+Noise-gate fix.
+
+- The gate now re-arms when a hit arrives during its release ramp instead of
+  continuing to fade to the floor, which could audibly cut the tail of rapid
+  hits
+- Regression test covering re-trigger during release
+
 ## 0.9.0 (2026-11-09)
 
 Project renamed from libhive to Hivedrum for a more distinctive identity.
